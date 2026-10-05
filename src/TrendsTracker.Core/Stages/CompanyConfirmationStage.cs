@@ -33,16 +33,19 @@ public sealed class CompanyConfirmationStage
     private static readonly string[] RetrievalQueries =
     {
         "revenue growth guidance outlook multi-year future revenue target doubling",
+        "profit PAT net profit earnings growth doubling bottom line guidance",
         "margin guidance EBITDA operating margin profitability outlook improvement",
         "capacity expansion capex new plant greenfield brownfield order book pipeline demand"
     };
 
     // Chunks mentioning these terms are boosted — they're where guidance lives.
+    // Includes PROFIT terms, since profit doubling counts as much as revenue doubling.
     private static readonly string[] GuidanceKeywords =
     {
         "guidance", "guide", "outlook", "expect", "target", "double", "triple", "cagr",
         "capex", "capacity", "expansion", "margin", "ebitda", "order book", "pipeline",
-        "demand", "growth", "revenue", "crore", "billion"
+        "demand", "growth", "revenue", "crore", "billion",
+        "profit", "pat", "net profit", "earnings", "bottom line", "profitability"
     };
 
     public CompanyConfirmationStage(
@@ -58,8 +61,16 @@ public sealed class CompanyConfirmationStage
     {
         var result = new ConfirmationResult { Company = company };
 
-        // 1. Find source documents.
-        var pdfUrls = await _finder.FindPdfUrlsAsync(company, max: 3, ct: ct);
+        // 1. Fetch Screener page ONCE: document PDF links + market cap.
+        var screener = await _finder.FetchAsync(company, maxPdfs: 3, ct: ct);
+        var pdfUrls = screener.PdfUrls;
+
+        // Record market cap and whether it's above the configured limit.
+        result.MarketCapCr = screener.MarketCapCr;
+        company.MarketCapCr = screener.MarketCapCr;
+        result.AboveMarketCapLimit =
+            screener.MarketCapCr is decimal mc && mc > _cfg.MaxMarketCapCr;
+
         if (pdfUrls.Count == 0)
         {
             result.DocumentsFound = false;
@@ -240,7 +251,7 @@ public sealed class CompanyConfirmationStage
             $"{maxRate:0}% (\"{example}\"). Compounded, that is ~{x3:0.0}x over 3 years and " +
             $"~{x5:0.0}x over 5 years. " +
             (clears2x
-                ? "This CLEARS the 'double revenue in 3-5 years' bar, so if this guidance is credible, score HIGH."
+                ? "This CLEARS the 'double in 3-5 years' bar (whether the rate is for revenue OR profit), so if this guidance is credible, score HIGH."
                 : "This does NOT by itself reach 2x in 3-5 years.");
     }
 
@@ -286,33 +297,35 @@ public sealed class CompanyConfirmationStage
         {{mathNote}}
 
         The investor's bar is HIGH: they want companies whose management is guiding —
-        DIRECTLY or INDIRECTLY — that REVENUE could DOUBLE OR MORE (2x+) within 3 to 5
-        years. Assess three things from the excerpts:
+        DIRECTLY or INDIRECTLY — that the business could roughly DOUBLE (2x+) within
+        3 to 5 years. IMPORTANT: EITHER revenue doubling OR profit (PAT / net profit /
+        EBITDA) doubling counts as a PASS — profit doubling is just as valuable as
+        revenue doubling. A strong named growth driver (a big new project, segment, or
+        order book) with management-stated visibility also supports a pass.
 
-        1. GROWTH guidance — explicit ("we aim to double revenue by FY28", "25%+ CAGR")
-           or indirect (large order book, strong demand, big addressable market).
-        2. MARGIN guidance — any outlook on EBITDA/operating margins (expanding,
-           stable, or improving helps the growth case).
-        3. EXPANSION plans — capacity additions, new plants, capex programs,
-           acquisitions — concrete signals that back up the growth.
+        Assess from the excerpts:
+        1. GROWTH — revenue AND/OR profit growth guidance. Explicit ("we aim to double
+           profit by FY28", "25%+ revenue CAGR", "PAT to grow 40%") or indirect (large
+           order book, strong demand, big new project like a BESS/EV plant).
+        2. MARGIN — any EBITDA/operating-margin outlook.
+        3. EXPANSION — capacity additions, new plants, capex, acquisitions.
 
-        Use ONLY these excerpts (no outside knowledge). If the excerpts only show
-        steady single-digit growth or don't address multi-year scale, say so and
-        score LOW.
+        Use ONLY these excerpts (no outside knowledge). If they only show steady
+        single-digit growth or don't address multi-year scale, say so and score LOW.
 
         Return JSON of exactly this shape:
         {
           "longTermGrowthClaimed": true,
           "confidence": 0,
-          "verdict": "1-2 sentences: can revenue plausibly 2x+ in 3-5 years, grounded in the excerpts",
-          "growthSignal": "what the excerpts say about revenue growth (or 'none found')",
+          "verdict": "1-2 sentences: can the business (revenue OR profit) plausibly 2x+ in 3-5 years, grounded in the excerpts",
+          "growthSignal": "revenue AND/OR profit growth guidance found (or 'none found')",
           "marginSignal": "what the excerpts say about margins (or 'none found')",
-          "expansionSignal": "capacity/capex/expansion mentioned (or 'none found')",
+          "expansionSignal": "capacity/capex/expansion/new project mentioned (or 'none found')",
           "evidence": ["short direct quote 1", "short direct quote 2"]
         }
 
         "confidence" (0-100) = how strongly the excerpts support a credible path to
-        doubling revenue in 3-5 years.
+        doubling revenue OR profit in 3-5 years.
 
         RETRIEVED EXCERPTS:
         {{context}}

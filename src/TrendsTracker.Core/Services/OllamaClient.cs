@@ -6,14 +6,9 @@ namespace TrendsTracker.Services;
 
 /// <summary>
 /// LLM client backed by a local Ollama server (http://localhost:11434 by default).
-///
-/// Why this exists: Gemini's free tier caps generate-content calls at ~20/day,
-/// which a multi-stage pipeline blows through instantly. Ollama runs models on
-/// your own machine — no quota, no 429, no billing. The tradeoff is speed (local
-/// compute) and somewhat lower output quality than a frontier cloud model.
-///
-/// Implements the same <see cref="ILlmClient"/> contract as GeminiClient, so the
-/// pipeline stages are identical regardless of which provider is selected.
+/// Runs models on your own machine — no quota, no API keys, no billing. The only
+/// cost is speed (local compute). Implements <see cref="ILlmClient"/>, which the
+/// pipeline stages depend on.
 /// </summary>
 public sealed class OllamaClient : ILlmClient
 {

@@ -27,23 +27,23 @@ public sealed class NewsIngestStage
         var cutoff = DateTimeOffset.Now.AddDays(-_cfg.LookbackDays);
         var all = new List<Article>();
 
-        Console.WriteLine($"  Reading {_cfg.RssFeeds.Count} RSS feeds (last {_cfg.LookbackDays} days)...");
+        Log.Step($"  Reading {_cfg.RssFeeds.Count} RSS feeds (last {_cfg.LookbackDays} days)...");
         foreach (var feed in _cfg.RssFeeds)
         {
             try
             {
                 var items = await _rss.ReadFeedAsync(feed, cutoff, _cfg.MaxArticlesPerFeed, ct);
-                Console.WriteLine($"    {feed.Name,-40} {items.Count,3} items");
+                Log.Step($"    {feed.Name,-40} {items.Count,3} items");
                 all.AddRange(items);
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"    {feed.Name,-40} FAILED ({ex.Message})");
+                Log.Warn($"    {feed.Name,-40} FAILED ({ex.Message})");
             }
         }
 
         var deduped = Dedupe(all);
-        Console.WriteLine($"  Collected {all.Count} items, {deduped.Count} after dedupe.");
+        Log.Step($"  Collected {all.Count} items, {deduped.Count} after dedupe.");
         return deduped;
     }
 

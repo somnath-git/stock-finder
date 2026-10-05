@@ -15,6 +15,15 @@ namespace TrendsTracker.Services;
 /// (bseindia.com) or the company's IR site. We fetch that page and extract the PDF
 /// links. All public, no key required.
 /// </summary>
+/// <summary>What we scrape from a Screener company page in one fetch.</summary>
+public sealed class ScreenerResult
+{
+    public List<string> PdfUrls { get; set; } = new();
+
+    /// <summary>Market capitalisation in ₹ crore, or null if we couldn't read it.</summary>
+    public decimal? MarketCapCr { get; set; }
+}
+
 public sealed class DocumentFinder
 {
     private readonly HttpFetcher _fetcher;
@@ -24,31 +33,63 @@ public sealed class DocumentFinder
     /// <summary>No API key needed — always "configured".</summary>
     public bool IsConfigured => true;
 
-    public async Task<List<string>> FindPdfUrlsAsync(Company company, int max = 3, CancellationToken ct = default)
+    /// <summary>
+    /// Fetches the Screener company page ONCE and pulls both the document PDF links
+    /// and the market cap. Prefer this over the two single-purpose methods so we
+    /// don't hit Screener twice per company.
+    /// </summary>
+    public async Task<ScreenerResult> FetchAsync(Company company, int maxPdfs = 3, CancellationToken ct = default)
     {
-        var urls = new List<string>();
+        var result = new ScreenerResult();
 
         foreach (var pageUrl in CandidateScreenerUrls(company))
         {
-            if (urls.Count >= max) break;
-
             var html = await _fetcher.GetHtmlAsync(pageUrl, ct);
             if (string.IsNullOrWhiteSpace(html)) continue;
 
-            var found = ExtractDocumentPdfLinks(html);
-            foreach (var u in found)
+            // Market cap: take it from the first page that has it.
+            result.MarketCapCr ??= ExtractMarketCapCr(html);
+
+            foreach (var u in ExtractDocumentPdfLinks(html))
             {
-                if (!urls.Contains(u)) urls.Add(u);
-                if (urls.Count >= max) break;
+                if (!result.PdfUrls.Contains(u)) result.PdfUrls.Add(u);
+                if (result.PdfUrls.Count >= maxPdfs) break;
             }
 
-            if (urls.Count > 0) break; // got documents from this page; stop trying others
+            // Stop once we have docs AND a market cap (or we've tried this page).
+            if (result.PdfUrls.Count > 0) break;
         }
 
-        if (urls.Count == 0)
-            Console.WriteLine($"      No concall/investor PDFs found on Screener for {company.Name}.");
+        if (result.PdfUrls.Count == 0)
+            Log.Step($"      No concall/investor PDFs found on Screener for {company.Name}.");
 
-        return urls;
+        return result;
+    }
+
+    /// <summary>Back-compat: just the PDF links.</summary>
+    public async Task<List<string>> FindPdfUrlsAsync(Company company, int max = 3, CancellationToken ct = default)
+        => (await FetchAsync(company, max, ct)).PdfUrls;
+
+    /// <summary>Just the market cap in ₹ crore (null if unknown).</summary>
+    public async Task<decimal?> GetMarketCapCrAsync(Company company, CancellationToken ct = default)
+        => (await FetchAsync(company, 1, ct)).MarketCapCr;
+
+    /// <summary>
+    /// Reads "Market Cap ₹ 3,986 Cr." from the Screener ratios list. The markup is:
+    ///   &lt;span class="name"&gt; Market Cap &lt;/span&gt;
+    ///   &lt;span class="nowrap value"&gt; ₹ &lt;span class="number"&gt;3,986&lt;/span&gt; Cr. &lt;/span&gt;
+    /// </summary>
+    private static decimal? ExtractMarketCapCr(string html)
+    {
+        // Find "Market Cap", then the first number span after it.
+        var m = Regex.Match(html,
+            @"Market\s*Cap.*?<span[^>]*class=""number""[^>]*>\s*([\d,]+(?:\.\d+)?)\s*</span>",
+            RegexOptions.IgnoreCase | RegexOptions.Singleline);
+        if (!m.Success) return null;
+
+        var raw = m.Groups[1].Value.Replace(",", "");
+        return decimal.TryParse(raw, System.Globalization.NumberStyles.Any,
+            System.Globalization.CultureInfo.InvariantCulture, out var v) ? v : null;
     }
 
     /// <summary>

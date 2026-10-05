@@ -45,14 +45,10 @@ public static class Program
         // Wire services.
         var fetcher = new HttpFetcher(http);
         var rss = new RssClient(fetcher);
-        ILlmClient llm = cfg.UseOllama
-            ? new OllamaClient(http, cfg.Ollama)
-            : new GeminiClient(http, cfg.Gemini);
+        ILlmClient llm = new OllamaClient(http, cfg.Ollama);
         var docFinder = new DocumentFinder(fetcher);
 
-        // "Stub mode" = no usable LLM. Ollama needs no key; Gemini needs one.
-        var llmReady = cfg.UseOllama || cfg.HasGeminiKey;
-        var report = new TrendReport { StubMode = !llmReady };
+        var report = new TrendReport();
 
         // ---- STAGE 1: INGEST ----
         Console.WriteLine("[1/5] Ingesting news...");
@@ -64,24 +60,6 @@ public static class Program
         {
             Console.WriteLine("No articles collected (check your network / feeds). Stopping.");
             ReportWriter.WriteConsole(report);
-            return 0;
-        }
-
-        // Without a usable LLM, stages 2-4 can't run. Show the ingest result and stop gracefully.
-        if (!llmReady)
-        {
-            Console.WriteLine();
-            Console.WriteLine("STUB MODE: no Gemini API key configured, so theme detection, company");
-            Console.WriteLine("mapping, and RAG confirmation are skipped. Either set Provider to");
-            Console.WriteLine("\"Ollama\" (local, free) in appsettings.json, or add a Gemini key.");
-            Console.WriteLine();
-            Console.WriteLine($"Sample of what was ingested ({Math.Min(10, articles.Count)} of {articles.Count}):");
-            foreach (var a in articles.Take(10))
-                Console.WriteLine($"  - {a.ToPromptLine()}");
-
-            ReportWriter.WriteConsole(report);
-            var stubFile = ReportWriter.WriteMarkdown(report, OutputDir());
-            Console.WriteLine($"\nMarkdown report: {stubFile}");
             return 0;
         }
 
@@ -133,6 +111,7 @@ public static class Program
         // ---- STAGE 5: REPORT ----
         Console.WriteLine("\n[5/5] Writing report...");
         Finish(report);
+        Console.ReadKey();
         return 0;
     }
 
@@ -163,10 +142,7 @@ public static class Program
         Console.WriteLine("  TrendsTracker — financial trend research tool");
         Console.WriteLine("=================================================");
         Console.WriteLine($"  Lookback window : {cfg.LookbackDays} days");
-        if (cfg.UseOllama)
-            Console.WriteLine($"  LLM provider    : Ollama (local) — {cfg.Ollama.GenerationModel} @ {cfg.Ollama.BaseUrl}");
-        else
-            Console.WriteLine($"  LLM provider    : Gemini — key {(cfg.HasGeminiKey ? "configured" : "MISSING (stub mode)")}");
+        Console.WriteLine($"  LLM provider    : Ollama (local) — {cfg.Ollama.GenerationModel} @ {cfg.Ollama.BaseUrl}");
         Console.WriteLine($"  PDF source      : Screener.in (free)");
         Console.WriteLine();
     }

@@ -13,10 +13,11 @@
     <ProjectReference Include="..\TrendsTracker.Data\TrendsTracker.Data.csproj" />
   </ItemGroup>
 
+  <!-- Single shared config: both console apps link to config/appsettings.json. -->
   <ItemGroup>
-    <None Update="appsettings.json">
+    <Content Include="..\..\config\appsettings.json" Link="appsettings.json">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </None>
+    </Content>
   </ItemGroup>
 
 </Project>

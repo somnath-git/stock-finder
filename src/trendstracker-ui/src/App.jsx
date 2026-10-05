@@ -13,7 +13,10 @@ function CompanyCard({ c }) {
         </span>
       </div>
 
-      <div className="confidence">Confidence {c.confidence}/100 · signal: {c.signalType || 'n/a'}</div>
+      <div className="confidence">
+        Confidence {c.confidence}/100 · signal: {c.signalType || 'n/a'}
+        {c.marketCapCr != null && <> · mcap ₹{Number(c.marketCapCr).toLocaleString('en-IN')} cr</>}
+      </div>
       <div className="conf-bar"><div className="conf-fill" style={{ width: `${c.confidence}%` }} /></div>
 
       {c.verdict && <div className="verdict">{c.growthComment || c.marginComment || c.expansionComment}</div>}

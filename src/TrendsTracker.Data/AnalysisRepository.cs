@@ -37,6 +37,7 @@ public sealed class AnalysisRepository
             existing.Name = analysis.Name;
             existing.Verdict = analysis.Verdict;
             existing.Confidence = analysis.Confidence;
+            existing.MarketCapCr = analysis.MarketCapCr;
             existing.SignalType = analysis.SignalType;
             existing.GrowthComment = analysis.GrowthComment;
             existing.MarginComment = analysis.MarginComment;

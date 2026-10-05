@@ -68,17 +68,9 @@ public static class Program
             return 1;
         }
 
-        if (!cfg.UseOllama && !cfg.HasGeminiKey)
-        {
-            Console.Error.WriteLine("No usable LLM configured. Set Provider to \"Ollama\" or add a Gemini key.");
-            return 1;
-        }
-
         using var http = BuildHttpClient();
         var fetcher = new HttpFetcher(http);
-        ILlmClient llm = cfg.UseOllama
-            ? new OllamaClient(http, cfg.Ollama)
-            : new GeminiClient(http, cfg.Gemini);
+        ILlmClient llm = new OllamaClient(http, cfg.Ollama);
         var docFinder = new DocumentFinder(fetcher);
         var stage = new CompanyConfirmationStage(cfg, llm, docFinder, fetcher);
 
@@ -93,8 +85,7 @@ public static class Program
         Console.WriteLine("=================================================");
         Console.WriteLine($"  Company : {company.Name}");
         Console.WriteLine($"  Stock   : {company.Stock}");
-        var provider = cfg.UseOllama ? $"Ollama ({cfg.Ollama.GenerationModel})" : "Gemini";
-        Console.WriteLine($"  LLM     : {provider}");
+        Console.WriteLine($"  LLM     : Ollama ({cfg.Ollama.GenerationModel})");
         Console.WriteLine($"  Docs    : Screener.in (free)");
         Console.WriteLine();
 
@@ -160,6 +151,8 @@ public static class Program
         Console.WriteLine();
         Console.WriteLine("================ RESULT ================");
         Console.WriteLine($"Company                 : {r.Company.Name}");
+        Console.WriteLine($"Market cap              : {(r.MarketCapCr.HasValue ? $"\u20b9{r.MarketCapCr:N0} cr" : "unknown")}" +
+                          (r.AboveMarketCapLimit ? "  (ABOVE your size limit)" : ""));
         Console.WriteLine($"Documents found         : {(r.DocumentsFound ? "yes" : "no")}");
 
         if (!r.DocumentsFound)
@@ -207,7 +200,8 @@ public static class Program
         Console.WriteLine();
         Console.WriteLine("================ RESULT (cached) ================");
         Console.WriteLine($"Company                 : {a.Name}  [{a.Stock}]");
-        Console.WriteLine($"Can revenue 2x+ in 3-5y : {(a.Verdict ? "YES" : "no")}");
+        Console.WriteLine($"Market cap              : {(a.MarketCapCr.HasValue ? $"\u20b9{a.MarketCapCr:N0} cr" : "unknown")}");
+        Console.WriteLine($"Can 2x+ in 3-5y         : {(a.Verdict ? "YES" : "no")}");
         Console.WriteLine($"Confidence              : {a.Confidence}/100");
         Console.WriteLine($"Signal type             : {a.SignalType}");
         Console.WriteLine();
@@ -239,6 +233,7 @@ public static class Program
         Name = company.Name,
         Verdict = r.LongTermGrowthClaimed,
         Confidence = r.Confidence,
+        MarketCapCr = r.MarketCapCr,
         SignalType = ClassifySignal(r),
         GrowthComment = r.GrowthSignal,
         MarginComment = r.MarginSignal,

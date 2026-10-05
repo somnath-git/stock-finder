@@ -78,6 +78,7 @@ static object ToDto(CompanyAnalysis c) => new
     c.Name,
     c.Verdict,
     c.Confidence,
+    c.MarketCapCr,
     c.SignalType,
     c.GrowthComment,
     c.MarginComment,

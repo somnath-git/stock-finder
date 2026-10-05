@@ -52,6 +52,7 @@ public sealed class Company
     public string Name { get; set; } = "";       // full company name, e.g. "Himadri Speciality Chemical"
     public string Stock { get; set; } = "";       // stock symbol/code, e.g. "HSCL"
     public string Exchange { get; set; } = "";   // NSE / BSE
+    public decimal? MarketCapCr { get; set; }    // market cap in ₹ crore (null if unknown)
     public string ThemeName { get; set; } = "";
     public string WhyRelevant { get; set; } = "";
 }
@@ -72,6 +73,12 @@ public sealed class ConfirmationResult
     public List<string> EvidenceQuotes { get; set; } = new();
     public List<string> DocumentSources { get; set; } = new();
     public bool DocumentsFound { get; set; }
+
+    /// <summary>Market cap in ₹ crore (null if unknown).</summary>
+    public decimal? MarketCapCr { get; set; }
+
+    /// <summary>True if market cap is known and exceeds the configured cap.</summary>
+    public bool AboveMarketCapLimit { get; set; }
 }
 
 /// <summary>The final report assembled in Stage 5.</summary>
@@ -81,5 +88,4 @@ public sealed class TrendReport
     public int ArticlesAnalyzed { get; set; }
     public List<Theme> Themes { get; set; } = new();
     public List<ConfirmationResult> Confirmations { get; set; } = new();
-    public bool StubMode { get; set; }
 }

@@ -36,7 +36,7 @@ public sealed class CompanyMappingStage
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"    Theme '{theme.Name}': company lookup failed ({ShortError(ex.Message)})");
+                Log.Warn($"    Theme '{theme.Name}': company lookup failed ({ShortError(ex.Message)})");
                 continue;
             }
 
@@ -54,7 +54,7 @@ public sealed class CompanyMappingStage
                 })
                 .ToList();
 
-            Console.WriteLine($"    Theme '{theme.Name}': {mapped.Count} companies");
+            Log.Step($"    Theme '{theme.Name}': {mapped.Count} companies");
             companies.AddRange(mapped);
         }
 
@@ -67,13 +67,14 @@ public sealed class CompanyMappingStage
         Keywords: {{string.Join(", ", theme.Keywords)}}
 
         List {{_cfg.MaxCompaniesPerTheme}} companies LISTED in India (NSE or BSE) that
-        are genuine pure-plays or major beneficiaries of this theme. Prefer focused
-        beneficiaries over giant conglomerates. Only real, currently-listed Indian
-        companies. For "ticker" give the plain NSE symbol WITHOUT any suffix
-        (e.g. "LT", "TATAMOTORS" — not "LT.NS").
+        are genuine pure-plays on this theme.
+
+        what are the direct beneficiaries of this theme, and which companies are likely to benefit from it in the next 3-5 years? 
+        Also, what are the proxy companies that are not pure-plays but are likely to benefit from this theme, but the revenue should be significant part of their business?
+        look for companies that are micro, small-cap or mid-cap, and have a strong growth potential.
 
         Return a JSON object with a "companies" array, exactly like this example:
-        {"companies":[{"name":"Larsen & Toubro","ticker":"LT","exchange":"NSE","whyRelevant":"Large EPC order book in infrastructure"}]}
+        {"companies":[{"name":"KPI Green Energy","ticker":"KPIGREEN","exchange":"NSE","whyRelevant":"Small-cap pure-play solar developer with fast-growing order book"}]}
         """;
 
     private static string ShortError(string msg)

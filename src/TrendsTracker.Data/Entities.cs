@@ -20,6 +20,9 @@ public sealed class CompanyAnalysis
     /// <summary>0-100 confidence in the verdict.</summary>
     public int Confidence { get; set; }
 
+    /// <summary>Market cap in ₹ crore (null if unknown).</summary>
+    public decimal? MarketCapCr { get; set; }
+
     /// <summary>What kind of signal drove the verdict: revenue / profit / thematic / mixed.</summary>
     public string SignalType { get; set; } = "";
 

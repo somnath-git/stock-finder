@@ -46,19 +46,14 @@ public sealed class ThemeDetectionStage
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"  ERROR: theme detection call failed: {ex.Message}");
+            Log.Warn($"  Theme detection failed: {ex.Message}");
             return new();
         }
 
         var raw = JsonHelper.DeserializeList<ThemeDto>(response);
-
         if (raw.Count == 0)
         {
-            Console.WriteLine("  WARNING: Could not parse themes from the model response.");
-            var preview = response.Length > 1500 ? response[..1500] : response;
-            Console.WriteLine("  --- RAW MODEL RESPONSE (debug) ---");
-            Console.WriteLine(preview);
-            Console.WriteLine("  --- END ---");
+            Log.Warn("  Could not parse themes from the model response.");
             return new();
         }
 
@@ -87,7 +82,7 @@ public sealed class ThemeDetectionStage
         .Take(_cfg.MaxThemes)
         .ToList();
 
-        Console.WriteLine($"  Detected {themes.Count} themes.");
+        Log.Step($"  Detected {themes.Count} themes.");
         return themes;
     }
 

@@ -22,8 +22,6 @@ public static class ReportWriter
         Console.WriteLine("================ TREND REPORT ================");
         Console.WriteLine($"Generated : {report.GeneratedAt:yyyy-MM-dd HH:mm}");
         Console.WriteLine($"Articles  : {report.ArticlesAnalyzed}");
-        if (report.StubMode)
-            Console.WriteLine("MODE      : STUB (no Gemini key — add one for real analysis)");
         Console.WriteLine();
 
         Console.WriteLine("--- Trending Themes (ranked) ---");
@@ -70,8 +68,6 @@ public static class ReportWriter
         sb.AppendLine();
         sb.AppendLine($"- **Generated:** {report.GeneratedAt:yyyy-MM-dd HH:mm}");
         sb.AppendLine($"- **Articles analysed:** {report.ArticlesAnalyzed}");
-        if (report.StubMode)
-            sb.AppendLine("- **Mode:** STUB (no Gemini key configured)");
         sb.AppendLine();
 
         sb.AppendLine("## Trending Themes");
