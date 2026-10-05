@@ -1,5 +1,6 @@
 ﻿using System.Net.Http.Headers;
 using TrendsTracker.Config;
+using TrendsTracker.Data;
 using TrendsTracker.Models;
 using TrendsTracker.Reporting;
 using TrendsTracker.Services;
@@ -75,35 +76,34 @@ public static class Program
             return 0;
         }
 
-        // ---- STAGE 3: THEME -> COMPANIES ----
-        Console.WriteLine("\n[3/5] Mapping themes to listed companies...");
+        // ---- STAGES 3+4: PER-THEME, END-TO-END ----
+        // For each theme: map its companies, then immediately analyze + save each.
+        // Results flow incrementally and a crash mid-run keeps everything already saved.
+        Console.WriteLine("\n[3/5] Per-theme: map companies -> confirm growth (RAG) -> save...");
+
         var companyStage = new CompanyMappingStage(cfg, llm);
-        var companies = await companyStage.RunAsync(report.Themes);
-        Console.WriteLine($"  {companies.Count} candidate companies.");
-
-        // ---- STAGE 4: RAG CONFIRMATION ----
-        Console.WriteLine("\n[4/5] Confirming via concalls / investor presentations (RAG)...");
-        Console.WriteLine("  PDF discovery: Screener.in (free, no API key).");
-
         var confirmStage = new CompanyConfirmationStage(cfg, llm, docFinder, fetcher);
-        foreach (var company in companies)
+
+        AnalysisRepository? repo = null;
+        try { repo = DataFactory.CreateRepository(); await repo.EnsureCreatedAsync(); }
+        catch (Exception ex) { Console.WriteLine($"  (DB unavailable, results won't be saved: {ex.Message})"); }
+        var runner = new AnalysisRunner(cfg, confirmStage, docFinder, repo);
+
+        var themeNum = 0;
+        foreach (var theme in report.Themes)
         {
-            Console.WriteLine($"  Analysing {company.Name}...");
-            try
+            themeNum++;
+            Console.WriteLine($"\n  Theme {themeNum}/{report.Themes.Count}: {theme.Name}");
+
+            var companies = await companyStage.MapThemeAsync(theme);
+            foreach (var company in companies)
             {
-                var result = await confirmStage.ConfirmAsync(company);
-                report.Confirmations.Add(result);
-                Console.WriteLine($"    docs={(result.DocumentsFound ? "yes" : "no")}, " +
-                                  $"growth={(result.LongTermGrowthClaimed ? "yes" : "no")}, " +
-                                  $"confidence={result.Confidence}");
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"    failed: {ex.Message}");
+                var outcome = await runner.ProcessAsync(company);
+                // Keep a lightweight record for the markdown report too.
                 report.Confirmations.Add(new ConfirmationResult
                 {
                     Company = company,
-                    Verdict = $"Error: {ex.Message}"
+                    LongTermGrowthClaimed = outcome == AnalysisRunner.Outcome.AnalyzedPass
                 });
             }
         }
@@ -111,7 +111,6 @@ public static class Program
         // ---- STAGE 5: REPORT ----
         Console.WriteLine("\n[5/5] Writing report...");
         Finish(report);
-        Console.ReadKey();
         return 0;
     }
 

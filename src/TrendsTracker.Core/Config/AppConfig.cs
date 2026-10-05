@@ -19,6 +19,9 @@ public sealed class AppConfig
     /// </summary>
     public decimal MaxMarketCapCr { get; set; } = 30000;
 
+    /// <summary>Screener index/screen codes to pull constituent stocks from (TrendsTracker.Screen).</summary>
+    public List<string> ScreenerIndexes { get; set; } = new() { "SMALLCA250", "NFMICRO250" };
+
     public OllamaConfig Ollama { get; set; } = new();
     public List<RssFeedConfig> RssFeeds { get; set; } = new();
     public RagConfig Rag { get; set; } = new();

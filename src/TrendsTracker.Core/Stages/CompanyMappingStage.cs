@@ -24,41 +24,42 @@ public sealed class CompanyMappingStage
     public async Task<List<Company>> RunAsync(List<Theme> themes, CancellationToken ct = default)
     {
         var companies = new List<Company>();
-
         foreach (var theme in themes)
+            companies.AddRange(await MapThemeAsync(theme, ct));
+        return companies;
+    }
+
+    /// <summary>Maps a SINGLE theme to its candidate companies (for per-theme processing).</summary>
+    public async Task<List<Company>> MapThemeAsync(Theme theme, CancellationToken ct = default)
+    {
+        var prompt = BuildPrompt(theme);
+        string response;
+        try
         {
-            // Pacing is handled centrally by the LLM client's throttle (Gemini only).
-            var prompt = BuildPrompt(theme);
-            string response;
-            try
-            {
-                response = await _llm.GenerateTextAsync(prompt, ct);
-            }
-            catch (Exception ex)
-            {
-                Log.Warn($"    Theme '{theme.Name}': company lookup failed ({ShortError(ex.Message)})");
-                continue;
-            }
-
-            var dtos = JsonHelper.DeserializeList<CompanyDto>(response);
-            var mapped = dtos
-                .Where(d => !string.IsNullOrWhiteSpace(d.Name))
-                .Take(_cfg.MaxCompaniesPerTheme)
-                .Select(d => new Company
-                {
-                    Name = d.Name!.Trim(),
-                    Stock = (d.Ticker ?? "").Trim(),
-                    Exchange = (d.Exchange ?? "").Trim(),
-                    WhyRelevant = (d.WhyRelevant ?? "").Trim(),
-                    ThemeName = theme.Name
-                })
-                .ToList();
-
-            Log.Step($"    Theme '{theme.Name}': {mapped.Count} companies");
-            companies.AddRange(mapped);
+            response = await _llm.GenerateTextAsync(prompt, ct);
+        }
+        catch (Exception ex)
+        {
+            Log.Warn($"    Theme '{theme.Name}': company lookup failed ({ShortError(ex.Message)})");
+            return new();
         }
 
-        return companies;
+        var dtos = JsonHelper.DeserializeList<CompanyDto>(response);
+        var mapped = dtos
+            .Where(d => !string.IsNullOrWhiteSpace(d.Name))
+            .Take(_cfg.MaxCompaniesPerTheme)
+            .Select(d => new Company
+            {
+                Name = d.Name!.Trim(),
+                Stock = (d.Ticker ?? "").Trim(),
+                Exchange = (d.Exchange ?? "").Trim(),
+                WhyRelevant = (d.WhyRelevant ?? "").Trim(),
+                ThemeName = theme.Name
+            })
+            .ToList();
+
+        Log.Step($"    Theme '{theme.Name}': {mapped.Count} companies");
+        return mapped;
     }
 
     private string BuildPrompt(Theme theme) => $$"""
