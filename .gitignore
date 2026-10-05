@@ -1,0 +1,22 @@
+# ---- .NET build output ----
+**/bin/
+**/obj/
+*.user
+.vs/
+
+# ---- generated reports ----
+reports/
+**/reports/
+
+# ---- Node / React (Vite) ----
+**/node_modules/
+**/dist/
+*.local
+
+# ---- secrets: real keys live in appsettings.json; commit appsettings.sample.json instead ----
+**/appsettings.json
+**/appsettings.Development.json
+
+# ---- misc ----
+*.log
+.DS_Store
