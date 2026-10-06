@@ -23,16 +23,16 @@ public sealed class OllamaClient : ILlmClient
 
     public bool IsConfigured => !string.IsNullOrWhiteSpace(_cfg.BaseUrl);
 
-    public async Task<string> GenerateTextAsync(string prompt, CancellationToken ct = default)
+    public async Task<string> GenerateTextAsync(string prompt, bool? jsonMode = null, CancellationToken ct = default)
     {
         var url = $"{_cfg.BaseUrl.TrimEnd('/')}/api/generate";
 
-        // JSON mode is opt-in: some small models emit an empty "{}" under it, so by
-        // default we let the model answer freely and parse the JSON out loosely.
+        // jsonMode overrides the configured default (null = use config).
+        var useJson = jsonMode ?? _cfg.UseJsonMode;
         var tokens = Math.Max(256, _cfg.MaxOutputTokens);
         var ctx = Math.Max(2048, _cfg.ContextWindow);
 
-        object payload = _cfg.UseJsonMode
+        object payload = useJson
             ? new
             {
                 model = _cfg.GenerationModel,

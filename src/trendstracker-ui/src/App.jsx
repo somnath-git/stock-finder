@@ -49,6 +49,20 @@ function CompanyCard({ c }) {
 // Sort by confidence, highest first.
 const byConfidence = (a, b) => b.confidence - a.confidence
 
+// Group search hits: if they're all one stock, group by concall date; otherwise
+// group by stock (so you see which companies discuss the topic).
+function groupHits(hits) {
+  if (!hits || hits.length === 0) return {}
+  const distinctStocks = new Set(hits.map(h => h.stock))
+  const singleStock = distinctStocks.size === 1
+  const groups = {}
+  for (const h of hits) {
+    const key = singleStock ? `${h.stock} — ${h.transcriptDate || 'undated'}` : h.stock
+    ;(groups[key] ||= []).push(h)
+  }
+  return groups
+}
+
 export default function App() {
   const [tab, setTab] = useState('strong')
   const [companies, setCompanies] = useState([])
@@ -56,6 +70,31 @@ export default function App() {
   const [query, setQuery] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+
+  // Semantic search / ask state (separate from the company list filter).
+  const [searchQuery, setSearchQuery] = useState('')
+  const [searchStock, setSearchStock] = useState('')
+  const [searchHits, setSearchHits] = useState([])
+  const [answer, setAnswer] = useState('')
+  const [searched, setSearched] = useState(false)
+
+  async function runSearch() {
+    const sq = searchQuery.trim()
+    if (!sq) return
+    setLoading(true); setError(''); setSearched(true); setAnswer('')
+    try {
+      const params = new URLSearchParams({ q: sq, k: '10' })
+      if (searchStock.trim()) params.set('stock', searchStock.trim())
+      // /api/ask gives a concise LLM answer + the supporting passages.
+      const r = await fetch(`/api/ask?${params}`)
+      if (!r.ok) throw new Error(`API returned ${r.status}`)
+      const data = await r.json()
+      setAnswer(data.answer || '')
+      setSearchHits(data.passages || [])
+    } catch (e) {
+      setError(`Search failed: ${e.message}. Is the API running on :5080?`)
+    } finally { setLoading(false) }
+  }
 
   async function loadCompanies() {
     setLoading(true); setError('')
@@ -106,10 +145,11 @@ export default function App() {
         <button className={`tab ${tab === 'notEvident' ? 'active' : ''}`} onClick={() => setTab('notEvident')}>
           Not evident ({notEvident.length})
         </button>
+        <button className={`tab ${tab === 'search' ? 'active' : ''}`} onClick={() => setTab('search')}>Ask transcripts</button>
         <button className={`tab ${tab === 'news' ? 'active' : ''}`} onClick={() => setTab('news')}>News feed</button>
       </div>
 
-      {tab !== 'news' && (
+      {(tab === 'strong' || tab === 'notEvident') && (
         <>
           <div className="searchbar">
             <input
@@ -130,6 +170,63 @@ export default function App() {
             </div>
           )}
           {activeList.map(c => <CompanyCard key={c.stock} c={c} />)}
+        </>
+      )}
+
+      {tab === 'search' && (
+        <>
+          <p className="muted" style={{ marginTop: 0, fontSize: 13 }}>
+            Ask a question across stored concall transcripts — e.g. "what is the order book?",
+            "margin outlook?", "any debt reduction plan?". Leave the stock box empty to ask across all companies.
+          </p>
+          <div className="searchbar">
+            <input
+              placeholder="Ask a question (e.g. what is the order book?)"
+              value={searchQuery}
+              onChange={e => setSearchQuery(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && runSearch()}
+              style={{ flex: 2 }}
+            />
+            <input
+              placeholder="Stock (optional)"
+              value={searchStock}
+              onChange={e => setSearchStock(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && runSearch()}
+              style={{ flex: 1 }}
+            />
+            <button onClick={runSearch}>Ask</button>
+          </div>
+
+          {loading && <div className="center muted">Thinking…</div>}
+          {error && <div className="error">{error}</div>}
+
+          {answer && (
+            <div className="card" style={{ borderColor: 'var(--accent)' }}>
+              <div className="card-title" style={{ marginBottom: 6 }}>Answer</div>
+              <div style={{ fontSize: 15, lineHeight: 1.5, whiteSpace: 'pre-wrap' }}>{answer}</div>
+            </div>
+          )}
+
+          {!loading && searched && searchHits.length === 0 && !error && (
+            <div className="center muted">No matching passages. Analyze some stocks first to store their transcripts.</div>
+          )}
+          {searchHits.length > 0 && (
+            <div className="muted" style={{ fontSize: 12, margin: '12px 0 6px' }}>Supporting passages:</div>
+          )}
+          {Object.entries(groupHits(searchHits)).map(([key, hits]) => (
+            <div className="card" key={key}>
+              <div className="card-title" style={{ marginBottom: 8 }}>{key}</div>
+              {hits.map((h, i) => (
+                <div key={i} style={{ marginBottom: 10 }}>
+                  <div className="muted" style={{ fontSize: 12 }}>
+                    {h.stock} · {h.transcriptDate || 'undated'} · similarity {h.similarity}
+                  </div>
+                  <div style={{ fontSize: 14, margin: '2px 0' }}>{h.text}</div>
+                  {h.source && <a className="sources" href={h.source} target="_blank" rel="noreferrer" style={{ fontSize: 11 }}>source</a>}
+                </div>
+              ))}
+            </div>
+          ))}
         </>
       )}
 

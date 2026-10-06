@@ -149,7 +149,7 @@ public sealed class CompanyConfirmationStage
         var context = BuildContext(hits);
         var mathNote = BuildCagrMathNote(hits);
         var prompt = BuildPrompt(company, context, mathNote);
-        var response = await _llm.GenerateTextAsync(prompt, ct);
+        var response = await _llm.GenerateTextAsync(prompt, ct: ct);
 
         var dto = JsonHelper.Deserialize<VerdictDto>(response);
         if (dto is null)

@@ -1,15 +1,18 @@
 namespace TrendsTracker.Services;
 
 /// <summary>
-/// Abstraction over an LLM provider so the pipeline stages don't care whether
-/// they're talking to Gemini (cloud, quota-limited) or Ollama (local, unlimited).
-/// Both implementations expose the same three operations.
+/// Abstraction over a local LLM provider (Ollama). Exposes generation + embeddings.
 /// </summary>
 public interface ILlmClient
 {
     bool IsConfigured { get; }
 
-    Task<string> GenerateTextAsync(string prompt, CancellationToken ct = default);
+    /// <summary>
+    /// Generates text. <paramref name="jsonMode"/> overrides the configured default:
+    /// true = force JSON output (for structured prompts), false = plain prose (for
+    /// natural-language answers), null = use the client's configured default.
+    /// </summary>
+    Task<string> GenerateTextAsync(string prompt, bool? jsonMode = null, CancellationToken ct = default);
 
     Task<float[]> EmbedAsync(string text, CancellationToken ct = default);
 

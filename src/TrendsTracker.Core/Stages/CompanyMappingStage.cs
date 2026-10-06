@@ -36,7 +36,7 @@ public sealed class CompanyMappingStage
         string response;
         try
         {
-            response = await _llm.GenerateTextAsync(prompt, ct);
+            response = await _llm.GenerateTextAsync(prompt, ct: ct);
         }
         catch (Exception ex)
         {
