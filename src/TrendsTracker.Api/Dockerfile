@@ -8,6 +8,9 @@ WORKDIR /src
 COPY src/TrendsTracker.Core/   src/TrendsTracker.Core/
 COPY src/TrendsTracker.Data/   src/TrendsTracker.Data/
 COPY src/TrendsTracker.Api/    src/TrendsTracker.Api/
+# The API csproj links a shared config from here (appsettings.json if present,
+# else the committed appsettings.sample.json). Only the sample is committed.
+COPY config/                   config/
 
 RUN dotnet restore src/TrendsTracker.Api/TrendsTracker.Api.csproj
 RUN dotnet publish src/TrendsTracker.Api/TrendsTracker.Api.csproj -c Release -o /app
