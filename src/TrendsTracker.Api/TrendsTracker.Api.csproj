@@ -10,9 +10,15 @@
     <PackageReference Include="Pgvector.EntityFrameworkCore" Version="0.3.0" />
   </ItemGroup>
 
-  <!-- Shared config so the API can read Ollama settings for query embedding. -->
+  <!-- Shared config so the API can read Ollama settings for query embedding.
+       Prefer the real appsettings.json (local dev, gitignored); fall back to the
+       committed sample so a clean clone (e.g. Render) still builds. Both copy to
+       the same output name the API loads (trendstracker.json). -->
   <ItemGroup>
-    <Content Include="..\..\config\appsettings.json" Link="trendstracker.json">
+    <Content Condition="Exists('..\..\config\appsettings.json')" Include="..\..\config\appsettings.json" Link="trendstracker.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Condition="!Exists('..\..\config\appsettings.json')" Include="..\..\config\appsettings.sample.json" Link="trendstracker.json">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
   </ItemGroup>
