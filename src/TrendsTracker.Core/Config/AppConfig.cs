@@ -33,8 +33,15 @@ public sealed class AppConfig
 
         var json = File.ReadAllText(path);
         var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
-        return JsonSerializer.Deserialize<AppConfig>(json, options)
-               ?? throw new InvalidOperationException("Failed to parse appsettings.json");
+        var cfg = JsonSerializer.Deserialize<AppConfig>(json, options)
+                  ?? throw new InvalidOperationException("Failed to parse appsettings.json");
+
+        // Env override so the same config works in Docker (where Ollama is a service
+        // named "ollama") and on the host (localhost).
+        var ollamaUrl = Environment.GetEnvironmentVariable("OLLAMA_BASEURL");
+        if (!string.IsNullOrWhiteSpace(ollamaUrl)) cfg.Ollama.BaseUrl = ollamaUrl;
+
+        return cfg;
     }
 }
 

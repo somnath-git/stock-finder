@@ -30,28 +30,41 @@ public static class Program
 
         // --force re-analyzes even if a saved result exists.
         var force = args.Any(a => a.Equals("--force", StringComparison.OrdinalIgnoreCase));
-        var positional = args.Where(a => !a.StartsWith("--")).ToArray();
+        var positional = args.Where(a => !a.StartsWith("--")).ToList();
 
         // Stock comes from the command line, or we ask for it interactively
         // (e.g. when launched from Visual Studio's Run button with no arguments).
         string nameOrStock;
-        if (positional.Length > 0 && !string.IsNullOrWhiteSpace(positional[0]))
+        if (positional.Count > 0 && !string.IsNullOrWhiteSpace(positional[0]))
         {
             nameOrStock = positional[0].Trim();
         }
         else
         {
-            Console.Write("Enter stock symbol or company name (e.g. LT, TATAMOTORS, DMART): ");
-            nameOrStock = (Console.ReadLine() ?? "").Trim();
-            if (string.IsNullOrWhiteSpace(nameOrStock))
+            Console.Write("Enter stock symbol (optionally add --force to re-analyze), e.g. SYRMA or SYRMA --force: ");
+            var line = (Console.ReadLine() ?? "").Trim();
+            if (string.IsNullOrWhiteSpace(line))
             {
                 Console.Error.WriteLine("No stock entered. Exiting.");
                 return 1;
             }
+
+            // Parse the typed line the same way as command-line args, so a trailing
+            // "--force" works when entered interactively too.
+            var typed = line.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            if (typed.Any(t => t.Equals("--force", StringComparison.OrdinalIgnoreCase))) force = true;
+            positional = typed.Where(t => !t.StartsWith("--")).ToList();
+
+            if (positional.Count == 0)
+            {
+                Console.Error.WriteLine("No stock entered. Exiting.");
+                return 1;
+            }
+            nameOrStock = positional[0].Trim();
         }
 
         // Optional explicit stock symbol as a second positional arg; otherwise reuse the input.
-        var stock = positional.Length > 1 && !string.IsNullOrWhiteSpace(positional[1])
+        var stock = positional.Count > 1 && !string.IsNullOrWhiteSpace(positional[1])
             ? positional[1].Trim()
             : nameOrStock;
 

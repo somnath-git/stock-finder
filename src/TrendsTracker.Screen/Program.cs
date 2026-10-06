@@ -29,7 +29,7 @@ public static class Program
         Console.OutputEncoding = System.Text.Encoding.UTF8;
 
         var force = HasFlag(args, "--force");
-        var limit = GetInt(args, "--limit") ?? int.MaxValue;
+        var limit = GetInt(args, "--limit") ?? 250;
         var indexOverride = GetValue(args, "--index");
         var maxPages = GetInt(args, "--pages") ?? 10;
 

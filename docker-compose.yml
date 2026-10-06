@@ -1,0 +1,41 @@
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: trendstracker
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+  ollama:
+    image: ollama/ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama:/root/.ollama
+
+  api:
+    build:
+      context: .
+      dockerfile: src/TrendsTracker.Api/Dockerfile
+    environment:
+      TRENDSTRACKER_DB: "Host=db;Port=5432;Database=trendstracker;Username=postgres;Password=postgres"
+    ports:
+      - "5080:8080"
+    depends_on:
+      - db
+
+  ui:
+    build:
+      context: ./src/trendstracker-ui
+      dockerfile: Dockerfile
+    ports:
+      - "3000:80"
+    depends_on:
+      - api
+
+volumes:
+  pgdata:
+  ollama:

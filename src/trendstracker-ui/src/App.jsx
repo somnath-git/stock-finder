@@ -46,8 +46,11 @@ function CompanyCard({ c }) {
   )
 }
 
+// Sort by confidence, highest first.
+const byConfidence = (a, b) => b.confidence - a.confidence
+
 export default function App() {
-  const [tab, setTab] = useState('companies')
+  const [tab, setTab] = useState('strong')
   const [companies, setCompanies] = useState([])
   const [news, setNews] = useState([])
   const [query, setQuery] = useState('')
@@ -76,53 +79,57 @@ export default function App() {
     } finally { setLoading(false) }
   }
 
-  async function searchStock() {
-    const q = query.trim()
-    if (!q) { loadCompanies(); return }
-    setLoading(true); setError('')
-    try {
-      const r = await fetch(`/api/companies/${encodeURIComponent(q)}`)
-      if (r.status === 404) { setCompanies([]); setError(`No saved analysis for "${q}". Run the Company app on it first.`); return }
-      if (!r.ok) throw new Error(`API returned ${r.status}`)
-      setCompanies([await r.json()])
-    } catch (e) {
-      setError(`Search failed: ${e.message}`)
-    } finally { setLoading(false) }
-  }
+  useEffect(() => {
+    if (tab === 'news') loadNews()
+    else loadCompanies()
+  }, [tab])
 
-  useEffect(() => { if (tab === 'companies') loadCompanies(); else loadNews() }, [tab])
+  // Split + sort. Search filters by stock or name within the active list.
+  const q = query.trim().toLowerCase()
+  const matches = c => !q || c.stock?.toLowerCase().includes(q) || c.name?.toLowerCase().includes(q)
+  const strong = companies.filter(c => c.verdict && matches(c)).sort(byConfidence)
+  const notEvident = companies.filter(c => !c.verdict && matches(c)).sort(byConfidence)
+
+  const activeList = tab === 'strong' ? strong : tab === 'notEvident' ? notEvident : []
 
   return (
     <div className="app">
       <header>
-        <h1>TrendsTracker</h1>
+        <h1>StockFinder</h1>
         <p>Companies whose management guidance suggests they could roughly double in 3-5 years.</p>
       </header>
 
       <div className="tabs">
-        <button className={`tab ${tab === 'companies' ? 'active' : ''}`} onClick={() => setTab('companies')}>Companies</button>
+        <button className={`tab ${tab === 'strong' ? 'active' : ''}`} onClick={() => setTab('strong')}>
+          Strong growth ({strong.length})
+        </button>
+        <button className={`tab ${tab === 'notEvident' ? 'active' : ''}`} onClick={() => setTab('notEvident')}>
+          Not evident ({notEvident.length})
+        </button>
         <button className={`tab ${tab === 'news' ? 'active' : ''}`} onClick={() => setTab('news')}>News feed</button>
       </div>
 
-      {tab === 'companies' && (
+      {tab !== 'news' && (
         <>
           <div className="searchbar">
             <input
-              placeholder="Search a stock symbol (e.g. HSCL, AIMTRON)…"
+              placeholder="Filter by stock symbol or name…"
               value={query}
               onChange={e => setQuery(e.target.value)}
-              onKeyDown={e => e.key === 'Enter' && searchStock()}
             />
-            <button onClick={searchStock}>Search</button>
-            <button onClick={() => { setQuery(''); loadCompanies() }} style={{ background: 'var(--panel-2)' }}>All</button>
+            {query && <button onClick={() => setQuery('')} style={{ background: 'var(--panel-2)' }}>Clear</button>}
           </div>
 
           {loading && <div className="center muted">Loading…</div>}
           {error && <div className="error">{error}</div>}
-          {!loading && !error && companies.length === 0 && (
-            <div className="center muted">No analyzed companies yet. Run the Company app on a stock to populate this.</div>
+          {!loading && !error && activeList.length === 0 && (
+            <div className="center muted">
+              {tab === 'strong'
+                ? 'No companies passed the growth check yet.'
+                : 'Nothing here. Analyze some stocks to populate this.'}
+            </div>
           )}
-          {companies.map(c => <CompanyCard key={c.stock} c={c} />)}
+          {activeList.map(c => <CompanyCard key={c.stock} c={c} />)}
         </>
       )}
 

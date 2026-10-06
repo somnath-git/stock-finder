@@ -61,9 +61,9 @@ public sealed class CompanyConfirmationStage
     {
         var result = new ConfirmationResult { Company = company };
 
-        // 1. Fetch Screener page ONCE: document PDF links + market cap.
-        var screener = await _finder.FetchAsync(company, maxPdfs: 3, ct: ct);
-        var pdfUrls = screener.PdfUrls;
+        // 1. Fetch Screener page ONCE: latest concall transcripts + market cap.
+        var screener = await _finder.FetchAsync(company, maxTranscripts: 4, ct: ct);
+        var transcriptUrls = screener.TranscriptUrls;
 
         // Record market cap and whether it's above the configured limit.
         result.MarketCapCr = screener.MarketCapCr;
@@ -71,19 +71,19 @@ public sealed class CompanyConfirmationStage
         result.AboveMarketCapLimit =
             screener.MarketCapCr is decimal mc && mc > _cfg.MaxMarketCapCr;
 
-        if (pdfUrls.Count == 0)
+        if (transcriptUrls.Count == 0)
         {
             result.DocumentsFound = false;
-            result.Verdict = "No public concall/investor PDFs found on Screener.";
+            result.Verdict = "No concall transcripts found on Screener.";
             return result;
         }
 
         // 2. Ingest -> chunk -> embed -> store.
         var store = new InProcVectorStore();
 
-        // Gather chunks from all PDFs, capped so one company can't blow the budget.
+        // Gather chunks from the latest transcripts, capped so one company can't blow the budget.
         var pending = new List<(string Chunk, string Source)>();
-        foreach (var pdfUrl in pdfUrls)
+        foreach (var pdfUrl in transcriptUrls)
         {
             if (pending.Count >= _cfg.Rag.MaxChunksPerCompany) break;
 

@@ -1,29 +1,26 @@
-using System.Text.RegularExpressions;
 using HtmlAgilityPack;
+using System.Text.RegularExpressions;
 using TrendsTracker.Models;
 
 namespace TrendsTracker.Services;
 
-/// <summary>
-/// Finds publicly-available concall transcript / investor presentation PDFs for a
-/// company — WITHOUT any paid search API (Google's Custom Search JSON API is now
-/// closed to new customers and returns 403).
-///
-/// Strategy: Screener.in aggregates each listed company's filings. Its company page
-/// (screener.in/company/&lt;SYMBOL&gt;/) has a "Documents" area linking concall
-/// transcripts and investor presentations — the PDFs usually live on BSE
-/// (bseindia.com) or the company's IR site. We fetch that page and extract the PDF
-/// links. All public, no key required.
-/// </summary>
 /// <summary>What we scrape from a Screener company page in one fetch.</summary>
 public sealed class ScreenerResult
 {
-    public List<string> PdfUrls { get; set; } = new();
+    /// <summary>Concall transcript PDF URLs, newest first.</summary>
+    public List<string> TranscriptUrls { get; set; } = new();
 
     /// <summary>Market capitalisation in ₹ crore, or null if we couldn't read it.</summary>
     public decimal? MarketCapCr { get; set; }
 }
 
+/// <summary>
+/// Scrapes a company's recent concall TRANSCRIPTS and market cap from its Screener.in
+/// page — no paid search API needed. The company page has a "Concalls" section where
+/// each row (newest first) exposes a "Transcript" link (title="Raw Transcript"),
+/// alongside PPT / AI Summary / REC buttons. We take only the transcript PDFs — the
+/// richest source of management growth guidance — and only the latest few.
+/// </summary>
 public sealed class DocumentFinder
 {
     private readonly HttpFetcher _fetcher;
@@ -34,11 +31,11 @@ public sealed class DocumentFinder
     public bool IsConfigured => true;
 
     /// <summary>
-    /// Fetches the Screener company page ONCE and pulls both the document PDF links
-    /// and the market cap. Prefer this over the two single-purpose methods so we
-    /// don't hit Screener twice per company.
+    /// Fetches the Screener company page ONCE and pulls both the latest concall
+    /// transcript URLs and the market cap. Prefer this over the single-purpose
+    /// methods so we don't hit Screener twice per company.
     /// </summary>
-    public async Task<ScreenerResult> FetchAsync(Company company, int maxPdfs = 3, CancellationToken ct = default)
+    public async Task<ScreenerResult> FetchAsync(Company company, int maxTranscripts = 4, CancellationToken ct = default)
     {
         var result = new ScreenerResult();
 
@@ -50,29 +47,62 @@ public sealed class DocumentFinder
             // Market cap: take it from the first page that has it.
             result.MarketCapCr ??= ExtractMarketCapCr(html);
 
-            foreach (var u in ExtractDocumentPdfLinks(html))
+            var transcripts = ExtractTranscriptLinks(html, maxTranscripts);
+            if (transcripts.Count > 0)
             {
-                if (!result.PdfUrls.Contains(u)) result.PdfUrls.Add(u);
-                if (result.PdfUrls.Count >= maxPdfs) break;
+                result.TranscriptUrls = transcripts;
+                break; // got transcripts; no need to try the standalone page
             }
-
-            // Stop once we have docs AND a market cap (or we've tried this page).
-            if (result.PdfUrls.Count > 0) break;
         }
 
-        if (result.PdfUrls.Count == 0)
-            Log.Step($"      No concall/investor PDFs found on Screener for {company.Name}.");
+        if (result.TranscriptUrls.Count == 0)
+            Log.Step($"      No concall transcripts found on Screener for {company.Name}.");
 
         return result;
     }
 
-    /// <summary>Back-compat: just the PDF links.</summary>
-    public async Task<List<string>> FindPdfUrlsAsync(Company company, int max = 3, CancellationToken ct = default)
-        => (await FetchAsync(company, max, ct)).PdfUrls;
+    /// <summary>Just the latest concall transcript URLs (newest first).</summary>
+    public async Task<List<string>> FindTranscriptUrlsAsync(Company company, int max = 4, CancellationToken ct = default)
+        => (await FetchAsync(company, max, ct)).TranscriptUrls;
 
     /// <summary>Just the market cap in ₹ crore (null if unknown).</summary>
     public async Task<decimal?> GetMarketCapCrAsync(Company company, CancellationToken ct = default)
         => (await FetchAsync(company, 1, ct)).MarketCapCr;
+
+    /// <summary>
+    /// Extracts the concall TRANSCRIPT PDF links from the Screener "Concalls" section.
+    /// Each concall row has an anchor like:
+    ///   &lt;a class="button-chip" href="...pdf" title="Raw Transcript"&gt;Transcript&lt;/a&gt;
+    /// We match on that marker (NOT PPT / AI Summary / REC / annual reports) and
+    /// return them in page order (newest first), capped at <paramref name="max"/>.
+    /// </summary>
+    private static List<string> ExtractTranscriptLinks(string html, int max)
+    {
+        var results = new List<string>();
+        HtmlDocument doc;
+        try { doc = new HtmlDocument(); doc.LoadHtml(html); }
+        catch { return results; }
+
+        // Transcript buttons: anchors whose title is "Raw Transcript" (fallback: the
+        // link text is exactly "Transcript").
+        var anchors = doc.DocumentNode.SelectNodes(
+            "//a[@href and (translate(@title,'RAWTNSCIP','rawtnscip')='raw transcript' or normalize-space(.)='Transcript')]");
+        if (anchors == null) return results;
+
+        foreach (var a in anchors)
+        {
+            var href = a.GetAttributeValue("href", "").Trim();
+            if (string.IsNullOrWhiteSpace(href)) continue;
+
+            var abs = MakeAbsolute(href);
+            if (!string.IsNullOrWhiteSpace(abs) && !results.Contains(abs))
+                results.Add(abs);
+
+            if (results.Count >= max) break; // page order = newest first
+        }
+
+        return results;
+    }
 
     /// <summary>
     /// Reads "Market Cap ₹ 3,986 Cr." from the Screener ratios list. The markup is:
@@ -81,7 +111,6 @@ public sealed class DocumentFinder
     /// </summary>
     private static decimal? ExtractMarketCapCr(string html)
     {
-        // Find "Market Cap", then the first number span after it.
         var m = Regex.Match(html,
             @"Market\s*Cap.*?<span[^>]*class=""number""[^>]*>\s*([\d,]+(?:\.\d+)?)\s*</span>",
             RegexOptions.IgnoreCase | RegexOptions.Singleline);
@@ -93,84 +122,20 @@ public sealed class DocumentFinder
     }
 
     /// <summary>
-    /// Screener uses the NSE/BSE symbol in its URL. We try the configured ticker
-    /// (both consolidated and standalone variants); if absent, derive a guess from
-    /// the company name as a last resort.
+    /// Screener uses the NSE/BSE symbol in its URL. We try consolidated then standalone.
     /// </summary>
     private static IEnumerable<string> CandidateScreenerUrls(Company company)
     {
-        var symbols = new List<string>();
-        if (!string.IsNullOrWhiteSpace(company.Stock))
-        {
-            var t = company.Stock
-                .Replace("NSE:", "").Replace("BSE:", "")
-                .Trim().ToUpperInvariant();
-            // Strip Yahoo-style suffixes (.NS / .BO) that models sometimes add.
-            if (t.EndsWith(".NS")) t = t[..^3];
-            if (t.EndsWith(".BO")) t = t[..^3];
-            t = t.Trim();
-            if (t.Length > 0) symbols.Add(t);
-        }
+        if (string.IsNullOrWhiteSpace(company.Stock)) yield break;
 
-        foreach (var sym in symbols)
-        {
-            // consolidated first, then standalone
-            yield return $"https://www.screener.in/company/{Uri.EscapeDataString(sym)}/consolidated/";
-            yield return $"https://www.screener.in/company/{Uri.EscapeDataString(sym)}/";
-        }
-    }
+        var t = company.Stock.Replace("NSE:", "").Replace("BSE:", "").Trim().ToUpperInvariant();
+        if (t.EndsWith(".NS")) t = t[..^3];
+        if (t.EndsWith(".BO")) t = t[..^3];
+        t = t.Trim();
+        if (t.Length == 0) yield break;
 
-    /// <summary>
-    /// Pulls .pdf links from the page, preferring the concall / annual-report /
-    /// investor-presentation document links Screener exposes.
-    /// </summary>
-    private static List<string> ExtractDocumentPdfLinks(string html)
-    {
-        var results = new List<string>();
-        HtmlDocument doc;
-        try
-        {
-            doc = new HtmlDocument();
-            doc.LoadHtml(html);
-        }
-        catch
-        {
-            return results;
-        }
-
-        var anchors = doc.DocumentNode.SelectNodes("//a[@href]");
-        if (anchors == null) return results;
-
-        // Keywords that mark the kind of document we care about.
-        string[] wanted = { "concall", "transcript", "presentation", "investor", "ppt", "annual report", "earnings" };
-
-        foreach (var a in anchors)
-        {
-            var href = a.GetAttributeValue("href", "");
-            if (string.IsNullOrWhiteSpace(href)) continue;
-
-            var text = (a.InnerText ?? "").ToLowerInvariant();
-            var hrefLower = href.ToLowerInvariant();
-
-            var looksPdf = hrefLower.Contains(".pdf") || hrefLower.Contains("bseindia.com") || hrefLower.Contains("nseindia.com");
-            if (!looksPdf) continue;
-
-            // Prefer links whose text/URL mentions a document type; otherwise still
-            // keep direct .pdf links as a fallback.
-            var relevant = wanted.Any(w => text.Contains(w) || hrefLower.Contains(w)) || hrefLower.Contains(".pdf");
-            if (!relevant) continue;
-
-            var abs = MakeAbsolute(href);
-            if (!string.IsNullOrWhiteSpace(abs) && !results.Contains(abs))
-                results.Add(abs);
-        }
-
-        // Rank: explicit concall/transcript/presentation first.
-        results = results
-            .OrderByDescending(u => Regex.IsMatch(u, "concall|transcript|presentation|investor", RegexOptions.IgnoreCase))
-            .ToList();
-
-        return results;
+        yield return $"https://www.screener.in/company/{Uri.EscapeDataString(t)}/consolidated/";
+        yield return $"https://www.screener.in/company/{Uri.EscapeDataString(t)}/";
     }
 
     private static string MakeAbsolute(string href)
