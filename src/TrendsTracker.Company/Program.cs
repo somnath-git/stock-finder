@@ -141,13 +141,22 @@ public static class Program
             return 1;
         }
 
-        // Persist the fresh result.
+        // Persist the fresh result + store transcript chunks in pgvector for search.
         if (repo is not null)
         {
             try
             {
                 await repo.UpsertAsync(ToEntity(company, result));
-                Console.WriteLine("  (saved to database)");
+
+                if (result.EmbeddedChunks.Count > 0)
+                {
+                    var chunks = DataFactory.CreateTranscriptStore();
+                    if (force) await chunks.DeleteChunksAsync(stock);
+                    if (!await chunks.HasChunksAsync(stock))
+                        await chunks.SaveChunksAsync(stock, result.EmbeddedChunks);
+                }
+
+                Console.WriteLine($"  (saved to database — {result.EmbeddedChunks.Count} transcript chunks)");
             }
             catch (Exception ex)
             {
