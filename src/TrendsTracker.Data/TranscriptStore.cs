@@ -19,6 +19,21 @@ public sealed class TranscriptStore
     public Task<bool> HasChunksAsync(string stock, CancellationToken ct = default) =>
         _db.TranscriptChunks.AnyAsync(c => c.Stock == stock.ToUpper(), ct);
 
+    /// <summary>
+    /// Distinct transcript-date labels (e.g. "Nov 2025", "May 2026") stored for a
+    /// stock. Used to ground the LLM's query-planning step in the quarters that
+    /// actually exist, so "H1 FY26" can be mapped to a real stored concall.
+    /// </summary>
+    public Task<List<string>> GetQuartersAsync(string stock, CancellationToken ct = default)
+    {
+        var upper = stock.Trim().ToUpperInvariant();
+        return _db.TranscriptChunks
+            .Where(c => c.Stock == upper && c.TranscriptDate != "")
+            .Select(c => c.TranscriptDate)
+            .Distinct()
+            .ToListAsync(ct);
+    }
+
     /// <summary>Delete existing chunks for a stock (used with --force to re-embed fresh).</summary>
     public async Task DeleteChunksAsync(string stock, CancellationToken ct = default)
     {

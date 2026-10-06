@@ -125,22 +125,99 @@ app.MapGet("/api/ask", async (
     if (string.IsNullOrWhiteSpace(q))
         return Results.BadRequest(new { message = "Query 'q' is required." });
 
+    // --- Step 1: LLM query planning ---
+    // Ask the LLM to (a) rewrite the question into transcript-language search
+    // terms, and (b) resolve any period mentioned (e.g. "H1 FY26", "Q2 FY26")
+    // to one of the quarters actually stored. Grounding on the real stored list
+    // lets it map Indian-FY periods to the right concall (H1/Q2 FY26 is reported
+    // in the Nov 2025 call, not the newer May 2026 one).
+    var quarters = string.IsNullOrWhiteSpace(stock)
+        ? new List<string>()
+        : await store.GetQuartersAsync(stock);
+
+    string searchQuery = q;
+    string? targetQuarter = null;
+    if (quarters.Count > 0)
+    {
+        var quartersList = string.Join(", ", quarters.Select(x => $"\"{x}\""));
+        var planPrompt =
+            "You plan a search over Indian company concall transcripts. Indian fiscal year " +
+            "runs Apr-Mar: Q1=Apr-Jun, Q2=Jul-Sep (H1=Q1+Q2), Q3=Oct-Dec, Q4=Jan-Mar (H2=Q3+Q4). " +
+            "Results for a period are discussed in the concall held just AFTER it ends — " +
+            "so H1/Q2 FY26 (ending Sep 2025) is covered in the Oct-Nov 2025 concall, and " +
+            "H2/Q4 FY26 (ending Mar 2026) is covered in the Apr-May 2026 concall.\n\n" +
+            $"Stored concalls for this company: [{quartersList}].\n\n" +
+            "Return a JSON object with exactly these keys:\n" +
+            "  \"query\": a concise search phrase in transcript wording (strip FY/quarter jargon),\n" +
+            "  \"quarter\": the ONE stored concall label from the list above that best covers the " +
+            "period the question asks about, or null if the question names no period.\n\n" +
+            $"QUESTION: {q}";
+        try
+        {
+            var planJson = await llm.GenerateTextAsync(planPrompt, jsonMode: true);
+            using var doc = System.Text.Json.JsonDocument.Parse(planJson);
+            if (doc.RootElement.TryGetProperty("query", out var qv) && qv.ValueKind == System.Text.Json.JsonValueKind.String)
+            {
+                var rewritten = qv.GetString();
+                if (!string.IsNullOrWhiteSpace(rewritten)) searchQuery = rewritten!;
+            }
+            if (doc.RootElement.TryGetProperty("quarter", out var qq) && qq.ValueKind == System.Text.Json.JsonValueKind.String)
+            {
+                var picked = qq.GetString();
+                // Only honour a quarter the model actually invented from the real list.
+                targetQuarter = quarters.FirstOrDefault(x =>
+                    string.Equals(x, picked, StringComparison.OrdinalIgnoreCase));
+            }
+        }
+        catch { /* planning is best-effort; fall back to the raw question */ }
+    }
+
+    // --- Step 2: embed the (rewritten) query and retrieve ---
     float[] emb;
-    try { emb = await llm.EmbedAsync(q); }
+    try { emb = await llm.EmbedAsync(searchQuery); }
     catch (Exception ex) { return Results.Problem($"Embedding failed: {ex.Message}"); }
 
     var vec = new Vector(emb);
     var topK = k ?? 10;
-    var hits = string.IsNullOrWhiteSpace(stock)
+    var pool = string.IsNullOrWhiteSpace(stock)
         ? await store.SearchAcrossCompaniesAsync(vec, topK)
         : await store.SearchByCompanyAsync(stock, vec, topK);
 
-    if (hits.Count == 0)
-        return Results.Ok(new { answer = "No stored transcript passages matched. Analyze the stock first.", passages = Array.Empty<object>() });
+    if (pool.Count == 0)
+        return Results.Ok(new { answer = "No stored transcript passages matched. Analyze the stock first.", quarter = (string?)null, passages = Array.Empty<object>() });
 
+    // --- Step 3: pick the quarter ---
+    // If the planner resolved a specific quarter the question targets, use that
+    // quarter's passages. Otherwise fall back to the newest quarter that has hits
+    // (if the latest concall answers a period-agnostic question, don't dig older).
+    List<ChunkSearchResult> hits = targetQuarter is not null
+        ? pool
+            .Where(h => string.Equals(h.TranscriptDate, targetQuarter, StringComparison.OrdinalIgnoreCase))
+            .OrderByDescending(h => h.Similarity)
+            .Take(3)
+            .ToList()
+        : new List<ChunkSearchResult>();
+
+    // If the targeted quarter had no passages in the pool, fall back to the
+    // newest quarter that does (period-agnostic default).
+    if (hits.Count == 0)
+    {
+        hits = pool
+            .GroupBy(h => new { h.Stock, h.TranscriptDate })
+            .OrderByDescending(g => ParseQuarter(g.Key.TranscriptDate))
+            .First()
+            .OrderByDescending(h => h.Similarity)
+            .Take(3)
+            .ToList();
+    }
+
+    var quarter = string.IsNullOrWhiteSpace(hits[0].TranscriptDate) ? "undated" : hits[0].TranscriptDate;
+
+    // --- Step 4: LLM answers from the chosen quarter's passages ---
     var context = string.Join("\n\n", hits.Select((h, i) => $"[{i + 1}] ({h.Stock} {h.TranscriptDate}) {h.ChunkText}"));
     var prompt =
-        $"Answer the user's question using ONLY the transcript excerpts below. " +
+        $"Answer the user's question using ONLY the transcript excerpts below, " +
+        $"which are all from the {quarter} concall. " +
         $"Be direct and concise — AT MOST 5 lines. If the excerpts give a specific number or figure, state it. " +
         $"If the answer isn't in the excerpts, say so.\n\n" +
         $"QUESTION: {q}\n\nEXCERPTS:\n{context}";
@@ -152,6 +229,7 @@ app.MapGet("/api/ask", async (
     return Results.Ok(new
     {
         answer,
+        quarter,
         passages = hits.Select(h => new
         {
             h.Stock,
@@ -164,6 +242,20 @@ app.MapGet("/api/ask", async (
 });
 
 app.Run();
+
+// Parse a Screener quarter label like "May 2026" / "Nov 2025" into a sortable
+// date. Empty or unrecognised labels sort oldest (DateTime.MinValue) so a dated
+// quarter is always preferred over an undated one.
+static DateTime ParseQuarter(string? label)
+{
+    if (string.IsNullOrWhiteSpace(label)) return DateTime.MinValue;
+    var formats = new[] { "MMM yyyy", "MMMM yyyy", "MMM yy" };
+    return DateTime.TryParseExact(label.Trim(), formats,
+        System.Globalization.CultureInfo.InvariantCulture,
+        System.Globalization.DateTimeStyles.None, out var dt)
+        ? dt
+        : DateTime.MinValue;
+}
 
 // Shape the entity into a clean JSON DTO for the UI.
 static object ToDto(CompanyAnalysis c) => new

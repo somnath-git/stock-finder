@@ -49,20 +49,6 @@ function CompanyCard({ c }) {
 // Sort by confidence, highest first.
 const byConfidence = (a, b) => b.confidence - a.confidence
 
-// Group search hits: if they're all one stock, group by concall date; otherwise
-// group by stock (so you see which companies discuss the topic).
-function groupHits(hits) {
-  if (!hits || hits.length === 0) return {}
-  const distinctStocks = new Set(hits.map(h => h.stock))
-  const singleStock = distinctStocks.size === 1
-  const groups = {}
-  for (const h of hits) {
-    const key = singleStock ? `${h.stock} — ${h.transcriptDate || 'undated'}` : h.stock
-    ;(groups[key] ||= []).push(h)
-  }
-  return groups
-}
-
 export default function App() {
   const [tab, setTab] = useState('strong')
   const [companies, setCompanies] = useState([])
@@ -76,20 +62,23 @@ export default function App() {
   const [searchStock, setSearchStock] = useState('')
   const [searchHits, setSearchHits] = useState([])
   const [answer, setAnswer] = useState('')
+  const [quarter, setQuarter] = useState('')
   const [searched, setSearched] = useState(false)
 
   async function runSearch() {
     const sq = searchQuery.trim()
     if (!sq) return
-    setLoading(true); setError(''); setSearched(true); setAnswer('')
+    setLoading(true); setError(''); setSearched(true); setAnswer(''); setQuarter('')
     try {
       const params = new URLSearchParams({ q: sq, k: '10' })
       if (searchStock.trim()) params.set('stock', searchStock.trim())
-      // /api/ask gives a concise LLM answer + the supporting passages.
+      // /api/ask gives a concise LLM answer + the supporting passages from the
+      // single most-recent quarter that has relevant hits.
       const r = await fetch(`/api/ask?${params}`)
       if (!r.ok) throw new Error(`API returned ${r.status}`)
       const data = await r.json()
       setAnswer(data.answer || '')
+      setQuarter(data.quarter || '')
       setSearchHits(data.passages || [])
     } catch (e) {
       setError(`Search failed: ${e.message}. Is the API running on :5080?`)
@@ -211,22 +200,24 @@ export default function App() {
             <div className="center muted">No matching passages. Analyze some stocks first to store their transcripts.</div>
           )}
           {searchHits.length > 0 && (
-            <div className="muted" style={{ fontSize: 12, margin: '12px 0 6px' }}>Supporting passages:</div>
+            <div className="muted" style={{ fontSize: 12, margin: '12px 0 6px' }}>
+              Supporting passages — {searchHits[0].stock} · {quarter || 'undated'} (latest quarter with relevant data):
+            </div>
           )}
-          {Object.entries(groupHits(searchHits)).map(([key, hits]) => (
-            <div className="card" key={key}>
-              <div className="card-title" style={{ marginBottom: 8 }}>{key}</div>
-              {hits.map((h, i) => (
+          {searchHits.length > 0 && (
+            <div className="card">
+              <div className="card-title" style={{ marginBottom: 8 }}>
+                {searchHits[0].stock} — {quarter || 'undated'}
+              </div>
+              {searchHits.map((h, i) => (
                 <div key={i} style={{ marginBottom: 10 }}>
-                  <div className="muted" style={{ fontSize: 12 }}>
-                    {h.stock} · {h.transcriptDate || 'undated'} · similarity {h.similarity}
-                  </div>
+                  <div className="muted" style={{ fontSize: 12 }}>similarity {h.similarity}</div>
                   <div style={{ fontSize: 14, margin: '2px 0' }}>{h.text}</div>
                   {h.source && <a className="sources" href={h.source} target="_blank" rel="noreferrer" style={{ fontSize: 11 }}>source</a>}
                 </div>
               ))}
             </div>
-          ))}
+          )}
         </>
       )}
 
