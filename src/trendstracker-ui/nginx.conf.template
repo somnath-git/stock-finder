@@ -1,5 +1,5 @@
 server {
-    listen 80;
+    listen ${NGINX_PORT};
     server_name _;
 
     root /usr/share/nginx/html;
@@ -12,14 +12,15 @@ server {
 
     # Proxy API calls to the API service. API_UPSTREAM defaults to the compose
     # service (http://api:8080); set it to the API's public origin when the UI
-    # and API are hosted as separate services (e.g. https://my-api.up.railway.app).
+    # and API are hosted as separate services (e.g. https://my-api.onrender.com).
     #
-    # The upstream is assigned to a variable and a DNS resolver is set so nginx
-    # resolves it at request time instead of refusing to start when the host is
-    # not yet resolvable at boot. The resolver IP is Docker's embedded DNS; most
-    # hosts (Railway, Render, Fly) use the same 127.0.0.11.
+    # The upstream is assigned to a variable with a DNS resolver so nginx resolves
+    # it at request time instead of refusing to start when the host isn't yet
+    # resolvable at boot. DNS_RESOLVER defaults to a public resolver (works on
+    # Render / most hosts); for docker-compose set it to Docker's embedded DNS
+    # 127.0.0.11 so the internal "api" service name resolves.
     location /api/ {
-        resolver 127.0.0.11 ipv6=off valid=30s;
+        resolver ${DNS_RESOLVER} ipv6=off valid=30s;
         set $api_upstream ${API_UPSTREAM};
         proxy_pass $api_upstream/api/;
 

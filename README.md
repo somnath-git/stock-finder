@@ -57,7 +57,7 @@ docker compose down
 
 ## Host a shared demo (data + API + UI, no LLM)
 
-The "Ask transcripts" feature needs the local LLM, so a shared demo hosts only the database, API, and UI. The Ask tab stays visible and shows an offline notice (the API's `/api/ask-status` reports the LLM is unreachable). All stored analysis, transcripts, and news stay live.
+The "Ask transcripts" feature needs the local LLM, so a shared demo hosts only the database (Neon), API, and UI (Render). The Ask tab stays visible and shows an offline notice (the API's `/api/ask-status` reports the LLM is unreachable). All stored analysis, transcripts, and news stay live. Both free tiers have no time limit; Render web services sleep after 15 min idle and wake on the next request (~30-60s cold start).
 
 ### 1. Export your local data
 ```
@@ -65,35 +65,26 @@ docker exec -t trendstracker-db pg_dump -U postgres -d trendstracker -Fc -f /tmp
 docker cp trendstracker-db:/tmp/trendstracker.dump ./trendstracker.dump
 ```
 
-### 2. Create a managed Postgres with pgvector (Neon / Supabase / Railway)
-Create a Postgres instance, then enable the extension (run in its SQL console):
+### 2. Create the database on Neon
+- Create a free project at https://neon.tech and copy its connection string.
+- In Neon's SQL editor:
 ```
 CREATE EXTENSION IF NOT EXISTS vector;
 ```
 
-### 3. Restore your data into it
-Replace the connection values with the host's.
+### 3. Restore your data into Neon
 ```
-pg_restore --no-owner --clean --if-exists -d "postgresql://USER:PASSWORD@HOST:PORT/DBNAME?sslmode=require" ./trendstracker.dump
-```
-
-### 4. Deploy the API (Railway)
-```
-npm i -g @railway/cli
-railway login
-railway init
-railway up --service api --dockerfile src/TrendsTracker.Api/Dockerfile
-```
-Set the API service variables (no `OLLAMA_BASEURL`, so Ask reports offline):
-```
-railway variables --service api --set "TRENDSTRACKER_DB=postgresql://USER:PASSWORD@HOST:PORT/DBNAME?sslmode=require"
+docker cp ./trendstracker.dump trendstracker-db:/tmp/trendstracker.dump
+docker exec -i trendstracker-db pg_restore --no-owner --clean --if-exists -d "postgresql://USER:PASSWORD@HOST/DBNAME?sslmode=require" /tmp/trendstracker.dump
 ```
 
-### 5. Deploy the UI (Railway)
-```
-railway up --service ui --dockerfile src/trendstracker-ui/Dockerfile
-```
-Point the UI's nginx proxy at the API's public origin (no trailing slash), then open the UI's public URL:
-```
-railway variables --service ui --set "API_UPSTREAM=https://YOUR-API.up.railway.app"
-```
+### 4. Deploy on Render (uses render.yaml)
+- Push this repo to GitHub.
+- At https://render.com, New > Blueprint, connect the repo. Render reads `render.yaml` and creates the `stockfinder-api` and `stockfinder-ui` services.
+- Set the two values marked `sync: false` in the Render dashboard:
+  - `stockfinder-api` > `TRENDSTRACKER_DB` = the Neon connection string from step 2.
+  - `stockfinder-ui` > `API_UPSTREAM` = the API's public URL (e.g. `https://stockfinder-api.onrender.com`, no trailing slash).
+- Leave `OLLAMA_BASEURL` unset so the Ask tab shows its offline notice.
+
+### 5. Open the UI
+Open the `stockfinder-ui` public URL. First load after idle takes ~30-60s to wake.

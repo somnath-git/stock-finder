@@ -1,0 +1,48 @@
+# Render blueprint for the shared demo (database on Neon, no LLM).
+#
+# This defines the API and UI as two Docker web services built from the existing
+# Dockerfiles. The Postgres database is NOT defined here — create it on Neon
+# (free, pgvector-enabled) and paste its connection string into TRENDSTRACKER_DB.
+#
+# After connecting the repo in Render, set the two "sync: false" values in the
+# dashboard:
+#   - api.TRENDSTRACKER_DB -> your Neon connection string
+#   - ui.API_UPSTREAM      -> the API service's public URL (e.g. https://xxx.onrender.com)
+#
+# Note: Render free web services sleep after 15 min idle and wake on the next
+# request (~30-60s cold start). Leave OLLAMA_BASEURL unset so the "Ask" tab shows
+# its offline notice.
+
+services:
+  - type: web
+    name: stockfinder-api
+    runtime: docker
+    plan: free
+    dockerContext: .
+    dockerfilePath: ./src/TrendsTracker.Api/Dockerfile
+    envVars:
+      # Bind to the port Render assigns.
+      - key: ASPNETCORE_URLS
+        value: http://+:10000
+      - key: PORT
+        value: "10000"
+      # Neon connection string — set in the dashboard, not committed.
+      - key: TRENDSTRACKER_DB
+        sync: false
+
+  - type: web
+    name: stockfinder-ui
+    runtime: docker
+    plan: free
+    dockerContext: ./src/trendstracker-ui
+    dockerfilePath: ./src/trendstracker-ui/Dockerfile
+    envVars:
+      # nginx must listen on the port Render scans.
+      - key: NGINX_PORT
+        value: "10000"
+      # Public DNS so nginx can resolve the API's public hostname at request time.
+      - key: DNS_RESOLVER
+        value: "8.8.8.8"
+      # The API service's public URL (no trailing slash) — set in the dashboard.
+      - key: API_UPSTREAM
+        sync: false
