@@ -17,6 +17,9 @@ reports/
 **/appsettings.json
 **/appsettings.Development.json
 
+# ---- database dumps (data, not code) ----
+*.dump
+
 # ---- misc ----
 *.log
 .DS_Store

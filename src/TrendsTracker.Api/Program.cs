@@ -87,6 +87,27 @@ app.MapGet("/api/news", async (AnalysisRepository repo, int? max) =>
     }));
 });
 
+// Is the LLM reachable? The "Ask transcripts" feature needs a live Ollama server
+// (query planning + embedding + answer generation). When the app is hosted
+// without an LLM (e.g. a shared demo), this returns available=false so the UI can
+// show a friendly notice instead of failing on every question.
+app.MapGet("/api/ask-status", async (IHttpClientFactory httpFactory, OllamaConfig ollama) =>
+{
+    if (string.IsNullOrWhiteSpace(ollama.BaseUrl))
+        return Results.Ok(new { available = false });
+    try
+    {
+        var client = httpFactory.CreateClient("ollama");
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(3));
+        var resp = await client.GetAsync($"{ollama.BaseUrl.TrimEnd('/')}/api/tags", cts.Token);
+        return Results.Ok(new { available = resp.IsSuccessStatusCode });
+    }
+    catch
+    {
+        return Results.Ok(new { available = false });
+    }
+});
+
 // SEMANTIC SEARCH over stored concall transcripts (pgvector).
 //   ?q=<query>          required
 //   ?stock=<symbol>     optional — scope to one company (else all companies)

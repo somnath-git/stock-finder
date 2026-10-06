@@ -10,5 +10,11 @@ RUN npm run build
 
 FROM nginx:alpine AS runtime
 COPY --from=build /app/dist /usr/share/nginx/html
-COPY nginx.conf /etc/nginx/conf.d/default.conf
+# nginx:alpine runs envsubst on /etc/nginx/templates/*.template at startup,
+# writing the result to /etc/nginx/conf.d/. API_UPSTREAM defaults to the compose
+# service; override it when the API is hosted separately. The ENVSUBST_FILTER
+# keeps nginx's own $host / $remote_addr variables from being substituted.
+COPY nginx.conf.template /etc/nginx/templates/default.conf.template
+ENV API_UPSTREAM=http://api:8080
+ENV NGINX_ENVSUBST_FILTER=API_UPSTREAM
 EXPOSE 80

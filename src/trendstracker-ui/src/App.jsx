@@ -64,8 +64,23 @@ export default function App() {
   const [answer, setAnswer] = useState('')
   const [quarter, setQuarter] = useState('')
   const [searched, setSearched] = useState(false)
+  // null = not yet checked, true/false = whether the LLM backing "Ask" is live.
+  const [askAvailable, setAskAvailable] = useState(null)
+
+  // The "Ask" feature needs a live LLM. On a hosted demo without one, the API
+  // reports available=false and we show a notice instead of letting questions fail.
+  async function checkAskStatus() {
+    try {
+      const r = await fetch('/api/ask-status')
+      const data = await r.json()
+      setAskAvailable(!!data.available)
+    } catch {
+      setAskAvailable(false)
+    }
+  }
 
   async function runSearch() {
+    if (askAvailable === false) return
     const sq = searchQuery.trim()
     if (!sq) return
     setLoading(true); setError(''); setSearched(true); setAnswer(''); setQuarter('')
@@ -109,6 +124,7 @@ export default function App() {
 
   useEffect(() => {
     if (tab === 'news') loadNews()
+    else if (tab === 'search') checkAskStatus()
     else loadCompanies()
   }, [tab])
 
@@ -168,6 +184,18 @@ export default function App() {
             Ask a question across stored concall transcripts — e.g. "what is the order book?",
             "margin outlook?", "any debt reduction plan?". Leave the stock box empty to ask across all companies.
           </p>
+
+          {askAvailable === false && (
+            <div className="card" style={{ borderColor: 'var(--accent)' }}>
+              <div className="card-title" style={{ marginBottom: 6 }}>Ask is offline in this demo</div>
+              <div style={{ fontSize: 14, lineHeight: 1.5 }}>
+                Live question answering runs on a local language model, which isn't hosted in this
+                shared deployment. The stored analysis, transcripts, and news are all live — only the
+                interactive "Ask" step is paused here. Run the project locally with the LLM to use it.
+              </div>
+            </div>
+          )}
+
           <div className="searchbar">
             <input
               placeholder="Ask a question (e.g. what is the order book?)"
@@ -175,6 +203,7 @@ export default function App() {
               onChange={e => setSearchQuery(e.target.value)}
               onKeyDown={e => e.key === 'Enter' && runSearch()}
               style={{ flex: 2 }}
+              disabled={askAvailable === false}
             />
             <input
               placeholder="Stock (optional)"
@@ -182,8 +211,9 @@ export default function App() {
               onChange={e => setSearchStock(e.target.value)}
               onKeyDown={e => e.key === 'Enter' && runSearch()}
               style={{ flex: 1 }}
+              disabled={askAvailable === false}
             />
-            <button onClick={runSearch}>Ask</button>
+            <button onClick={runSearch} disabled={askAvailable === false}>Ask</button>
           </div>
 
           {loading && <div className="center muted">Thinking…</div>}
