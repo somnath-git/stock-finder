@@ -22,7 +22,11 @@ server {
     location /api/ {
         resolver ${DNS_RESOLVER} ipv6=off valid=30s;
         set $api_upstream ${API_UPSTREAM};
-        proxy_pass $api_upstream/api/;
+
+        # When proxy_pass uses a variable, nginx does NOT append the matched URI,
+        # so forward the full original request path ($request_uri, e.g.
+        # /api/companies?x=y) explicitly. proxy_pass must have no path of its own.
+        proxy_pass $api_upstream$request_uri;
 
         # When the upstream is a public HTTPS origin, use its own host for SNI,
         # the Host header, and certificate validation.
