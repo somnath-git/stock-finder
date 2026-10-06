@@ -88,3 +88,25 @@ docker exec -i trendstracker-db pg_restore --no-owner --clean --if-exists -d "po
 
 ### 5. Open the UI
 Open the `stockfinder-ui` public URL. First load after idle takes ~30-60s to wake.
+
+## Refresh the hosted data
+
+The analysis needs the local LLM, so run it on your machine and write straight to
+Neon. The hosted site reflects new data on its next request (no redeploy). Requires
+Docker running with the `ollama` container up and models pulled.
+
+Single stock:
+```
+./refresh.ps1 -Stock HSCL -NeonConnection "postgresql://USER:PASSWORD@HOST/DBNAME?sslmode=require"
+```
+
+Index batch (resumes from stored, analyzes up to -Limit new):
+```
+./refresh.ps1 -Index SMALLCA250 -Limit 20 -NeonConnection "postgresql://USER:PASSWORD@HOST/DBNAME?sslmode=require"
+```
+
+Or set the connection once and omit -NeonConnection:
+```
+$env:TRENDSTRACKER_DB = "postgresql://USER:PASSWORD@HOST/DBNAME?sslmode=require"
+./refresh.ps1 -Stock HSCL
+```
