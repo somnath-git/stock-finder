@@ -4,11 +4,14 @@ using TrendsTracker.Models;
 
 namespace TrendsTracker.Services;
 
+/// <summary>One concall transcript: its PDF URL and the concall date label (e.g. "Aug 2026").</summary>
+public sealed record Transcript(string Url, string Date);
+
 /// <summary>What we scrape from a Screener company page in one fetch.</summary>
 public sealed class ScreenerResult
 {
-    /// <summary>Concall transcript PDF URLs, newest first.</summary>
-    public List<string> TranscriptUrls { get; set; } = new();
+    /// <summary>Concall transcripts (url + date), newest first.</summary>
+    public List<Transcript> Transcripts { get; set; } = new();
 
     /// <summary>Market capitalisation in ₹ crore, or null if we couldn't read it.</summary>
     public decimal? MarketCapCr { get; set; }
@@ -37,6 +40,7 @@ public sealed class DocumentFinder
     /// </summary>
     public async Task<ScreenerResult> FetchAsync(Company company, int maxTranscripts = 4, CancellationToken ct = default)
     {
+        Thread.Sleep(1000 * 15); // avoid hitting Screener too fast in a loop
         var result = new ScreenerResult();
 
         foreach (var pageUrl in CandidateScreenerUrls(company))
@@ -47,23 +51,23 @@ public sealed class DocumentFinder
             // Market cap: take it from the first page that has it.
             result.MarketCapCr ??= ExtractMarketCapCr(html);
 
-            var transcripts = ExtractTranscriptLinks(html, maxTranscripts);
+            var transcripts = ExtractTranscripts(html, maxTranscripts);
             if (transcripts.Count > 0)
             {
-                result.TranscriptUrls = transcripts;
+                result.Transcripts = transcripts;
                 break; // got transcripts; no need to try the standalone page
             }
         }
 
-        if (result.TranscriptUrls.Count == 0)
+        if (result.Transcripts.Count == 0)
             Log.Step($"      No concall transcripts found on Screener for {company.Name}.");
 
         return result;
     }
 
-    /// <summary>Just the latest concall transcript URLs (newest first).</summary>
-    public async Task<List<string>> FindTranscriptUrlsAsync(Company company, int max = 4, CancellationToken ct = default)
-        => (await FetchAsync(company, max, ct)).TranscriptUrls;
+    /// <summary>Just the latest concall transcripts (url + date), newest first.</summary>
+    public async Task<List<Transcript>> FindTranscriptsAsync(Company company, int max = 4, CancellationToken ct = default)
+        => (await FetchAsync(company, max, ct)).Transcripts;
 
     /// <summary>Just the market cap in ₹ crore (null if unknown).</summary>
     public async Task<decimal?> GetMarketCapCrAsync(Company company, CancellationToken ct = default)
@@ -76,9 +80,9 @@ public sealed class DocumentFinder
     /// We match on that marker (NOT PPT / AI Summary / REC / annual reports) and
     /// return them in page order (newest first), capped at <paramref name="max"/>.
     /// </summary>
-    private static List<string> ExtractTranscriptLinks(string html, int max)
+    private static List<Transcript> ExtractTranscripts(string html, int max)
     {
-        var results = new List<string>();
+        var results = new List<Transcript>();
         HtmlDocument doc;
         try { doc = new HtmlDocument(); doc.LoadHtml(html); }
         catch { return results; }
@@ -89,15 +93,22 @@ public sealed class DocumentFinder
             "//a[@href and (translate(@title,'RAWTNSCIP','rawtnscip')='raw transcript' or normalize-space(.)='Transcript')]");
         if (anchors == null) return results;
 
+        var seen = new HashSet<string>();
         foreach (var a in anchors)
         {
             var href = a.GetAttributeValue("href", "").Trim();
             if (string.IsNullOrWhiteSpace(href)) continue;
 
             var abs = MakeAbsolute(href);
-            if (!string.IsNullOrWhiteSpace(abs) && !results.Contains(abs))
-                results.Add(abs);
+            if (string.IsNullOrWhiteSpace(abs) || !seen.Add(abs)) continue;
 
+            // The concall date is the first <div> inside the enclosing <li>
+            // (e.g. "Aug 2026"). Fall back to empty if we can't find it.
+            var li = a.Ancestors("li").FirstOrDefault();
+            var dateDiv = li?.SelectSingleNode(".//div");
+            var date = dateDiv is null ? "" : HtmlEntity.DeEntitize(dateDiv.InnerText).Trim();
+
+            results.Add(new Transcript(abs, date));
             if (results.Count >= max) break; // page order = newest first
         }
 

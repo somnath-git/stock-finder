@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Pgvector.EntityFrameworkCore;
 
 namespace TrendsTracker.Data;
 
@@ -27,11 +28,14 @@ public static class DataFactory
     {
         var conn = ResolveConnectionString(connectionString);
         var options = new DbContextOptionsBuilder<AppDbContext>()
-            .UseNpgsql(conn)
+            .UseNpgsql(conn, o => o.UseVector())   // enable pgvector in Npgsql
             .Options;
         return new AppDbContext(options);
     }
 
     public static AnalysisRepository CreateRepository(string? connectionString = null)
+        => new(CreateContext(connectionString));
+
+    public static TranscriptStore CreateTranscriptStore(string? connectionString = null)
         => new(CreateContext(connectionString));
 }

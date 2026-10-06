@@ -39,6 +39,32 @@ public sealed class CompanyAnalysis
     public DateTimeOffset AnalyzedAt { get; set; } = DateTimeOffset.UtcNow;
 }
 
+/// <summary>
+/// One embedded chunk of a company's concall transcript, stored permanently in
+/// pgvector. This turns the tool into a searchable knowledge base: once stored, you
+/// can ask any question ("what did X say about margins / China+1 / debt?") across one
+/// company or the whole universe, without re-downloading or re-embedding.
+/// </summary>
+public sealed class TranscriptChunk
+{
+    public int Id { get; set; }
+
+    /// <summary>Stock symbol, e.g. "AIMTRON".</summary>
+    public string Stock { get; set; } = "";
+
+    /// <summary>The concall this chunk came from, e.g. "Aug 2026" (as shown on Screener).</summary>
+    public string TranscriptDate { get; set; } = "";
+
+    /// <summary>Source transcript PDF URL.</summary>
+    public string Source { get; set; } = "";
+
+    /// <summary>The chunk text.</summary>
+    public string ChunkText { get; set; } = "";
+
+    /// <summary>Embedding vector (nomic-embed-text = 768 dims).</summary>
+    public Pgvector.Vector? Embedding { get; set; }
+}
+
 /// <summary>A news item collected from the RSS feeds (the "news feed" the UI shows).</summary>
 public sealed class NewsItem
 {

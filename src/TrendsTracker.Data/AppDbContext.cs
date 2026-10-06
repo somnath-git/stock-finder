@@ -15,9 +15,24 @@ public sealed class AppDbContext : DbContext
 
     public DbSet<CompanyAnalysis> Companies => Set<CompanyAnalysis>();
     public DbSet<NewsItem> NewsItems => Set<NewsItem>();
+    public DbSet<TranscriptChunk> TranscriptChunks => Set<TranscriptChunk>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {
+        // Enable the pgvector extension for similarity search over transcript chunks.
+        b.HasPostgresExtension("vector");
+
+        b.Entity<TranscriptChunk>(e =>
+        {
+            e.ToTable("transcript_chunks");
+            e.HasKey(x => x.Id);
+            e.HasIndex(x => x.Stock);
+            e.Property(x => x.Stock).HasMaxLength(32);
+            e.Property(x => x.TranscriptDate).HasMaxLength(32);
+            // nomic-embed-text produces 768-dimensional vectors.
+            e.Property(x => x.Embedding).HasColumnType("vector(768)");
+        });
+
         b.Entity<CompanyAnalysis>(e =>
         {
             e.ToTable("companies");

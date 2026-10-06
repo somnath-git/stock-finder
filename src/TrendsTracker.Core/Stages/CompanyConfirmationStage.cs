@@ -61,9 +61,9 @@ public sealed class CompanyConfirmationStage
     {
         var result = new ConfirmationResult { Company = company };
 
-        // 1. Fetch Screener page ONCE: latest concall transcripts + market cap.
+        // 1. Fetch Screener page ONCE: latest concall transcripts (url+date) + market cap.
         var screener = await _finder.FetchAsync(company, maxTranscripts: 4, ct: ct);
-        var transcriptUrls = screener.TranscriptUrls;
+        var transcripts = screener.Transcripts;
 
         // Record market cap and whether it's above the configured limit.
         result.MarketCapCr = screener.MarketCapCr;
@@ -71,35 +71,34 @@ public sealed class CompanyConfirmationStage
         result.AboveMarketCapLimit =
             screener.MarketCapCr is decimal mc && mc > _cfg.MaxMarketCapCr;
 
-        if (transcriptUrls.Count == 0)
+        if (transcripts.Count == 0)
         {
             result.DocumentsFound = false;
             result.Verdict = "No concall transcripts found on Screener.";
             return result;
         }
 
-        // 2. Ingest -> chunk -> embed -> store.
+        // 2. Ingest -> chunk -> embed -> store. Keep each chunk's source + concall date.
         var store = new InProcVectorStore();
 
-        // Gather chunks from the latest transcripts, capped so one company can't blow the budget.
-        var pending = new List<(string Chunk, string Source)>();
-        foreach (var pdfUrl in transcriptUrls)
+        var pending = new List<(string Chunk, string Source, string Date)>();
+        foreach (var t in transcripts)
         {
             if (pending.Count >= _cfg.Rag.MaxChunksPerCompany) break;
 
-            var bytes = await _fetcher.GetBytesAsync(pdfUrl, ct);
+            var bytes = await _fetcher.GetBytesAsync(t.Url, ct);
             if (bytes is null) continue;
 
             var text = PdfExtractor.ExtractText(bytes);
             if (string.IsNullOrWhiteSpace(text)) continue;
 
-            result.DocumentSources.Add(pdfUrl);
+            result.DocumentSources.Add(t.Url);
             var chunks = TextChunker.Chunk(text, _cfg.Rag.ChunkSize, _cfg.Rag.ChunkOverlap);
 
             foreach (var chunk in chunks)
             {
                 if (pending.Count >= _cfg.Rag.MaxChunksPerCompany) break;
-                pending.Add((chunk, pdfUrl));
+                pending.Add((chunk, t.Url, t.Date));
             }
         }
 
@@ -115,7 +114,16 @@ public sealed class CompanyConfirmationStage
         {
             var vectors = await _llm.EmbedBatchAsync(pending.Select(p => p.Chunk).ToList(), ct);
             for (var k = 0; k < vectors.Count && k < pending.Count; k++)
+            {
                 store.Add(pending[k].Chunk, vectors[k], pending[k].Source);
+                result.EmbeddedChunks.Add(new EmbeddedChunk
+                {
+                    Text = pending[k].Chunk,
+                    Embedding = vectors[k],
+                    Source = pending[k].Source,
+                    TranscriptDate = pending[k].Date
+                });
+            }
         }
         catch (Exception ex)
         {

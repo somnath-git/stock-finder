@@ -79,6 +79,22 @@ public sealed class ConfirmationResult
 
     /// <summary>True if market cap is known and exceeds the configured cap.</summary>
     public bool AboveMarketCapLimit { get; set; }
+
+    /// <summary>
+    /// The embedded transcript chunks produced during analysis, so the caller can
+    /// persist them to the vector DB for later ad-hoc search. Each carries its text,
+    /// embedding, source URL and concall date.
+    /// </summary>
+    public List<EmbeddedChunk> EmbeddedChunks { get; set; } = new();
+}
+
+/// <summary>An embedded transcript chunk, ready to persist to the vector store.</summary>
+public sealed class EmbeddedChunk
+{
+    public string Text { get; set; } = "";
+    public float[] Embedding { get; set; } = Array.Empty<float>();
+    public string Source { get; set; } = "";
+    public string TranscriptDate { get; set; } = "";
 }
 
 /// <summary>The final report assembled in Stage 5.</summary>

@@ -5,6 +5,7 @@
     <Project Path="src/TrendsTracker.Core/TrendsTracker.Core.csproj" />
     <Project Path="src/TrendsTracker.Data/TrendsTracker.Data.csproj" />
     <Project Path="src/TrendsTracker.Screen/TrendsTracker.Screen.csproj" />
+    <Project Path="src/TrendsTracker.Search/TrendsTracker.Search.csproj" />
     <Project Path="src/TrendsTracker.Trends/TrendsTracker.Trends.csproj" />
   </Folder>
 </Solution>

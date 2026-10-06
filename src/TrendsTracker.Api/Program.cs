@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Pgvector.EntityFrameworkCore;
 using TrendsTracker.Data;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -8,7 +9,8 @@ var builder = WebApplication.CreateBuilder(args);
 // falling back to the local default for dev.
 var conn = DataFactory.ResolveConnectionString(
     builder.Configuration.GetConnectionString("Default"));
-builder.Services.AddDbContext<AppDbContext>(opt => opt.UseNpgsql(conn));
+builder.Services.AddDbContext<AppDbContext>(opt =>
+    opt.UseNpgsql(conn, o => o.UseVector()));
 builder.Services.AddScoped<AnalysisRepository>();
 
 // --- CORS (so the React UI, served from another origin, can call this API) ---

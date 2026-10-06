@@ -17,13 +17,16 @@ public sealed class AnalysisRunner
     private readonly CompanyConfirmationStage _stage;
     private readonly DocumentFinder _finder;
     private readonly AnalysisRepository? _repo;
+    private readonly TranscriptStore? _chunks;
 
-    public AnalysisRunner(AppConfig cfg, CompanyConfirmationStage stage, DocumentFinder finder, AnalysisRepository? repo)
+    public AnalysisRunner(AppConfig cfg, CompanyConfirmationStage stage, DocumentFinder finder,
+        AnalysisRepository? repo, TranscriptStore? chunks = null)
     {
         _cfg = cfg;
         _stage = stage;
         _finder = finder;
         _repo = repo;
+        _chunks = chunks;
     }
 
     public enum Outcome { AnalyzedPass, AnalyzedFail, Cached, SkippedLargeCap, NoDocuments, Error }
@@ -69,6 +72,14 @@ public sealed class AnalysisRunner
             }
 
             if (_repo is not null) await _repo.UpsertAsync(ToEntity(stock, company, result), ct);
+
+            // Persist embedded chunks to pgvector for later ad-hoc search.
+            if (_chunks is not null && result.EmbeddedChunks.Count > 0)
+            {
+                if (force) await _chunks.DeleteChunksAsync(stock, ct);
+                if (!await _chunks.HasChunksAsync(stock, ct))
+                    await _chunks.SaveChunksAsync(stock, result.EmbeddedChunks, ct);
+            }
 
             var tag = result.LongTermGrowthClaimed ? "PASS" : "fail";
             Log.Step($"  {stock}: {tag} (conf {result.Confidence}, cap ₹{(capCr?.ToString("N0") ?? "?")}cr)");
