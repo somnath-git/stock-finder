@@ -1,15 +1,31 @@
 import { useEffect, useState } from 'react'
 
+// Screener defaults to consolidated financials; this is the canonical consolidated
+// company page for a given stock symbol.
+const screenerUrl = stock =>
+  `https://www.screener.in/company/${encodeURIComponent(stock)}/consolidated/`
+
 function CompanyCard({ c }) {
   return (
     <div className="card">
       <div className="card-top">
         <div>
           <span className="card-title">{c.name}</span>
+          {c.stock && (
+            <a
+              className="screener-link"
+              href={screenerUrl(c.stock)}
+              target="_blank"
+              rel="noreferrer"
+              title={`Open ${c.stock} on Screener (consolidated)`}
+            >
+              Screener ↗
+            </a>
+          )}
           <span className="card-stock">{c.stock}</span>
         </div>
         <span className={`badge ${c.verdict ? 'yes' : 'no'}`}>
-          {c.verdict ? 'CAN 2x+ in 3-5y' : 'not evident'}
+          {c.verdict ? 'Fast grower · 2x in ~3y' : 'not evident'}
         </span>
       </div>
 
@@ -140,7 +156,7 @@ export default function App() {
     <div className="app">
       <header>
         <h1>StockFinder</h1>
-        <p>Companies whose management guidance suggests they could roughly double in 3-5 years.</p>
+        <p>Fast-growing companies — management guidance suggests ~25%+ growth, roughly doubling in about 3 years.</p>
       </header>
 
       <div className="tabs">
